@@ -1,0 +1,55 @@
+{
+  "name": "bso5-components",
+  "version": "0.1.0",
+  "description": "Reusable headless data components on top of bso5: a generic filterable/sortable/groupable Grid and a filterable Tree. Bring your own CSS.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "reactive",
+    "dom",
+    "jsx",
+    "grid",
+    "tree",
+    "headless",
+    "typescript"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./jsx-runtime": {
+      "types": "./dist/jsx-runtime.d.ts",
+      "import": "./dist/jsx-runtime.js"
+    },
+    "./jsx-dev-runtime": {
+      "types": "./dist/jsx-runtime.d.ts",
+      "import": "./dist/jsx-runtime.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "bso5": "^0.3.0"
+  },
+  "devDependencies": {
+    "bso5": "*",
+    "@vitest/coverage-v8": "^5.0.0",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.0.0",
+    "vitest": "^5.0.0"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "bso5",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "bso5": ["./packages/bso5/src/index.ts"],
+      "bso5/jsx-runtime": ["./packages/bso5/src/jsx-runtime.ts"],
+      "bso5/jsx-dev-runtime": ["./packages/bso5/src/jsx-runtime.ts"],
+      "bso5-components": ["./packages/bso5-components/src/index.ts"],
+      "bso5-components/jsx-runtime": ["./packages/bso5-components/src/jsx-runtime.ts"],
+      "bso5-components/jsx-dev-runtime": ["./packages/bso5-components/src/jsx-runtime.ts"]
+    }
+  },
+  "include": [
+    "packages/bso5/src/**/*.ts",
+    "packages/bso5/src/**/*.tsx",
+    "packages/bso5/tests/**/*.ts",
+    "packages/bso5/tests/**/*.tsx",
+    "packages/bso5-components/src/**/*.ts",
+    "packages/bso5-components/src/**/*.tsx",
+    "packages/bso5-components/tests/**/*.ts",
+    "packages/bso5-components/tests/**/*.tsx",
+    "examples/counter/**/*.ts",
+    "examples/counter/**/*.tsx",
+    "examples/dataview/**/*.ts",
+    "examples/dataview/**/*.tsx",
+    "vitest.config.ts"
+  ],
+  "exclude": ["node_modules", "dist", "packages/*/dist"]
+}

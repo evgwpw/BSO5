@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": [],
+    "paths": {
+      "bso5-components": ["./src/index.ts"],
+      "bso5-components/jsx-runtime": ["./src/jsx-runtime.ts"],
+      "bso5-components/jsx-dev-runtime": ["./src/jsx-runtime.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}
