@@ -139,7 +139,9 @@ if (check) {
     console.error(`${OUT} отсутствует — запустите npm run docs:props`);
     process.exit(1);
   }
-  if (readFileSync(abs, 'utf8') !== content) {
+  // Сравниваем без учёта стиля переводов строк (CRLF в рабочей копии — не повод
+  // объявлять файл устаревшим).
+  if (readFileSync(abs, 'utf8').replace(/\r\n/g, '\n') !== content) {
     console.error(`${OUT} устарел — запустите npm run docs:props`);
     process.exit(1);
   }

@@ -148,7 +148,9 @@ for (const { file, content } of outputs) {
       failed = true;
       continue;
     }
-    if (readFileSync(abs, 'utf8') !== content) {
+    // Сравниваем без учёта стиля переводов строк (CRLF в рабочей копии — не
+    // повод объявлять тему устаревшей).
+    if (readFileSync(abs, 'utf8').replace(/\r\n/g, '\n') !== content) {
       console.error(`${file} устарел — запустите npm run docs:topics`);
       failed = true;
     }

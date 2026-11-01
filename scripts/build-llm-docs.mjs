@@ -84,7 +84,9 @@ for (const set of SETS) {
 
   let existing = '';
   try {
-    existing = readFileSync(target, 'utf8');
+    // Сравниваем без учёта стиля переводов строк: у кого-то рабочая копия CRLF
+    // (autocrlf), и это не повод объявлять файл устаревшим.
+    existing = readFileSync(target, 'utf8').replace(/\r\n/g, '\n');
   } catch {
     console.error(`${set.out} отсутствует — запустите npm run docs:llm`);
     failed = true;
