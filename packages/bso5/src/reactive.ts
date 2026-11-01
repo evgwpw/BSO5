@@ -862,12 +862,14 @@ export function isBoundValue(v: unknown): v is BoundValue {
  *
  * РУС: Привязанное значение обновляется автоматически после записей в источник.
  */
-export function $<T, R>(obj: Signal<T> | object, path?: (t: any) => R): BoundValue<R> {
+export function $<T>(source: Signal<T>): BoundValue<T>;
+export function $<T extends object, R>(source: T, path: (t: T) => R): BoundValue<R>;
+export function $(obj: Signal<any> | object, path?: (t: any) => any): BoundValue<any> {
   if (obj instanceof Signal) {
     const sig = obj as Signal<any>;
     return {
       [REACTIVE_VALUE]: true,
-      get value() { return sig.value as R; },
+      get value() { return sig.value; },
       subscribe: (cb: WatchCallback) => sig.subscribe(cb),
     };
   }
@@ -880,14 +882,14 @@ export function $<T, R>(obj: Signal<T> | object, path?: (t: any) => R): BoundVal
     // РУС: Обычный объект без реактивности: резолвим один раз, не обновляем.
     return {
       [REACTIVE_VALUE]: true,
-      get value() { return path(obj) as R; },
+      get value() { return path(obj); },
       subscribe: () => () => {},
     };
   }
   return {
     [REACTIVE_VALUE]: true,
-    get value() { return path(reactor.value) as R; },
-    subscribe: (cb: WatchCallback) => reactor.watch(path as PathAccessor<any, R>, cb),
+    get value() { return path(reactor.value); },
+    subscribe: (cb: WatchCallback) => reactor.watch(path as PathAccessor<any, unknown>, cb),
   };
 }
 

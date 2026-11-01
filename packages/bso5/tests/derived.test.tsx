@@ -8,6 +8,7 @@ import {
   Show, computed, createScope, dispose, effect, h, runInScope,
   setEffectErrorHandler, signal, $,
 } from 'bso5';
+import type { BoundValue } from 'bso5';
 
 const listeners = (sig: unknown): number => (sig as { listeners: Set<unknown> }).listeners.size;
 
@@ -67,6 +68,19 @@ describe('computed()', () => {
     dispose(scope);
     v.value = 2;
     expect(derived!.value).toBe(10); // пересчёта больше нет
+  });
+});
+
+describe('$(): типизация', () => {
+  it('на Signal сохраняет тип значения, а не unknown', () => {
+    const list = signal(['a', 'b']);
+    // Присваивание — проверка на этапе компиляции: до перегрузок здесь был unknown.
+    const bound: BoundValue<string[]> = $(list);
+    expect(bound.value).toEqual(['a', 'b']);
+
+    const count = signal(1);
+    const n: BoundValue<number> = $(count);
+    expect(n.value).toBe(1);
   });
 });
 
