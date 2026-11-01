@@ -276,6 +276,9 @@ h('input', el => el.focus());
 | Key | Value | Behaviour |
 | --- | --- | --- |
 | `class`, `className` | string | `el.className = value` (synonyms; if both, the last one wins) |
+| `class`, `className` | array | flattened list: `['card', isActive && 'active']`; nesting works, `false`/`null`/`undefined` are skipped |
+| `class`, `className` | object | name → flag map: `{ card: true, 'card--active': isActive }` |
+| `class`, `className` | empty result | the attribute is **not set** (no leftover `class=""`) |
 | `style` | string | `setAttribute('style', value)` |
 | `style` | object | per property: `el.style[prop] = value` |
 | `style` value | number | **always** gains `px`: `{ width: 10 }` → `10px`; unitless props (`opacity`, `zIndex`) must be strings |
@@ -295,7 +298,7 @@ h('input', el => el.focus());
 nothing; array → recursive; `Node` → as is; `$()` → a live text node.
 
 **Not supported:** object `ref` (`{ current }`), option-free `on*Capture` semantics,
-`class` normalization from arrays/objects, `dangerouslySetInnerHTML`.
+`dangerouslySetInnerHTML`.
 
 ### `hEl(tag, attrs, children[]): HTMLElement`
 
@@ -459,7 +462,6 @@ ratios are meaningful. Reproduce with `npm run build && npm run bench`
 | SSR / hydration | `h()` and `<For>` use the global `document`; server rendering is impossible |
 | Portals | mount into the needed node with `mount()` |
 | Object `ref` | `ref={el => …}`, keep the reference yourself |
-| `class` from objects/arrays | build the string yourself |
 | Lazy `computed` | recomputation is eager; cache manually for expensive work |
 | Multi-column sorting | `Grid` sorts by a single column |
 | Virtualization | no render window |
@@ -975,7 +977,7 @@ FILE: packages/bso5/README.en.md
 
 # bso5
 
-Reactive DOM without the bloat. A tiny (~4.2 kB min+gzip) TypeScript library that gives you
+Reactive DOM without the bloat. A tiny (~4.7 kB min+gzip) TypeScript library that gives you
 signals, deep reactive state and first-class **JSX support — with no framework, no virtual DOM
 and no compiler beyond the standard JSX transform**.
 
@@ -1200,7 +1202,7 @@ holds for both. `attrs` may also be a function: `h('input', el => el.focus())`.
 
 | Key | Value form | What happens |
 | --- | --- | --- |
-| `class` / `className` | string | `el.className = value` (both work; the last one wins) |
+| `class` / `className` | string, array, object | `el.className = value`; arrays are flattened (`['card', isActive && 'active']`), objects are name → flag maps, an empty result leaves no attribute |
 | `style` | string or object | string → `setAttribute('style', …)`; object → `el.style[prop] = value` per property |
 | `style` property | number | **always** gains `px` (`{ width: 10 }` → `10px`); unitless props (`opacity`, `zIndex`) must be strings |
 | `style` property | `$()` | the property becomes reactive |
@@ -1310,7 +1312,7 @@ Node ≥ 22.12 is required (vitest 5), npm ≥ 10 (lockfile v3).
 ```sh
 npm ci                  # strict install from package-lock.json
 npm run build           # tsc → dist/ of both packages
-npm test                # vitest (jsdom), 161 tests across both packages
+npm test                # vitest (jsdom), 200 tests across both packages
 npm run test:coverage   # with V8 coverage
 npm run typecheck       # strict tsc over both packages, examples and docs/snippets
 npm run bench           # grid/tree timings quoted in the README (after build)
@@ -1489,7 +1491,7 @@ but more expensive.
 
 ```bash
 npm ci              # at the monorepo root
-npm test            # 161 tests (core + components)
+npm test            # 200 tests (core + components)
 npm run typecheck
 npm run build
 npm run bench       # grid/tree timings

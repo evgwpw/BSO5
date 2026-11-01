@@ -197,7 +197,7 @@ rowKey={r => `${r.id}:${r.updated}`}
 
 ```bash
 npm ci              # в корне монорепо
-npm test            # 161 тест (ядро + компоненты)
+npm test            # 200 тестов (ядро + компоненты)
 npm run typecheck
 npm run build
 npm run bench       # замеры грида и дерева

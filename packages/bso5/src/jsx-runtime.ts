@@ -22,7 +22,7 @@
  */
 
 import type { BoundValue } from './reactive.js';
-import { appendChildren, flattenChildren, hEl, type Attrs, type Content } from './dom.js';
+import { appendChildren, flattenChildren, hEl, type Attrs, type ClassValue, type Content } from './dom.js';
 
 /** Anything JSX can render as a child. (РУС: Всё, что JSX может отрендерить как ребёнка.) */
 export type JsxChild =
@@ -37,8 +37,8 @@ export type JsxChild =
 
 /** Common attributes accepted by intrinsic elements. (РУС: Общие атрибуты, принимаемые интринсик-элементами.) */
 export interface DOMAttributes {
-  class?: AttrValue<string>;
-  className?: AttrValue<string>;
+  class?: AttrValue<ClassValue>;
+  className?: AttrValue<ClassValue>;
   id?: string;
   title?: AttrValue<string>;
   style?: Partial<CSSStyleDeclaration> | string;

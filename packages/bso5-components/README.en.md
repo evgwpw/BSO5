@@ -155,7 +155,7 @@ but more expensive.
 
 ```bash
 npm ci              # at the monorepo root
-npm test            # 161 tests (core + components)
+npm test            # 200 tests (core + components)
 npm run typecheck
 npm run build
 npm run bench       # grid/tree timings

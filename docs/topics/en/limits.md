@@ -7,7 +7,6 @@ Reference section 8 · Source: [API.en.md](../../API.en.md)
 | SSR / hydration | `h()` and `<For>` use the global `document`; server rendering is impossible |
 | Portals | mount into the needed node with `mount()` |
 | Object `ref` | `ref={el => …}`, keep the reference yourself |
-| `class` from objects/arrays | build the string yourself |
 | Lazy `computed` | recomputation is eager; cache manually for expensive work |
 | Multi-column sorting | `Grid` sorts by a single column |
 | Virtualization | no render window |

@@ -1,6 +1,6 @@
 # bso5
 
-Reactive DOM without the bloat. A tiny (~4.2 kB min+gzip) TypeScript library that gives you
+Reactive DOM without the bloat. A tiny (~4.7 kB min+gzip) TypeScript library that gives you
 signals, deep reactive state and first-class **JSX support — with no framework, no virtual DOM
 and no compiler beyond the standard JSX transform**.
 
@@ -225,7 +225,7 @@ holds for both. `attrs` may also be a function: `h('input', el => el.focus())`.
 
 | Key | Value form | What happens |
 | --- | --- | --- |
-| `class` / `className` | string | `el.className = value` (both work; the last one wins) |
+| `class` / `className` | string, array, object | `el.className = value`; arrays are flattened (`['card', isActive && 'active']`), objects are name → flag maps, an empty result leaves no attribute |
 | `style` | string or object | string → `setAttribute('style', …)`; object → `el.style[prop] = value` per property |
 | `style` property | number | **always** gains `px` (`{ width: 10 }` → `10px`); unitless props (`opacity`, `zIndex`) must be strings |
 | `style` property | `$()` | the property becomes reactive |
@@ -335,7 +335,7 @@ Node ≥ 22.12 is required (vitest 5), npm ≥ 10 (lockfile v3).
 ```sh
 npm ci                  # strict install from package-lock.json
 npm run build           # tsc → dist/ of both packages
-npm test                # vitest (jsdom), 161 tests across both packages
+npm test                # vitest (jsdom), 200 tests across both packages
 npm run test:coverage   # with V8 coverage
 npm run typecheck       # strict tsc over both packages, examples and docs/snippets
 npm run bench           # grid/tree timings quoted in the README (after build)

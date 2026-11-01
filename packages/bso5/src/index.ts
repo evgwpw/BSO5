@@ -1,7 +1,7 @@
 /**
  * BSO5 — Reactive DOM without the bloat. Just TypeScript.
  *
- * A tiny (~4.2 kB min+gzip) reactive DOM library with first-class JSX support
+ * A tiny (~4.7 kB min+gzip) reactive DOM library with first-class JSX support
  * and zero dependencies:
  *
  * - `Signal` / `signal` / `effect` — atomic reactive primitives;
@@ -18,7 +18,7 @@
  *
  * РУС: BSO5 — реактивный DOM без лишнего веса. Просто TypeScript.
  *
- * РУС: Крошечная (~4.2 kB min+gzip) реактивная DOM-библиотека с первоклассной
+ * РУС: Крошечная (~4.7 kB min+gzip) реактивная DOM-библиотека с первоклассной
  * поддержкой JSX и нулём зависимостей:
  *
  * РУС: - `Signal` / `signal` / `effect` — атомарные реактивные примитивы;
@@ -69,9 +69,10 @@ export {
   mount,
   parseEventProp,
   applyAttr,
+  classToString,
 } from './dom.js';
 
-export type { Content, Attrs, Mounted, StyleObject, StyleValue } from './dom.js';
+export type { Content, Attrs, Mounted, StyleObject, StyleValue, ClassValue } from './dom.js';
 
 export { For, Show, resolveSource } from './control.js';
 

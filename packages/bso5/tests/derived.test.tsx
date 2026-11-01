@@ -135,6 +135,20 @@ describe('$() и watch(): вложенный прокси', () => {
   });
 });
 
+describe('h(): class из массива и объекта', () => {
+  it('работает в JSX и не оставляет пустого атрибута', () => {
+    const on = signal(true);
+    const arr = <div class={['a', on.value && 'b', false]} /> as HTMLElement;
+    expect(arr.className).toBe('a b');
+
+    const obj = <div class={{ a: true, b: false }} /> as HTMLElement;
+    expect(obj.className).toBe('a');
+
+    const empty = <div class={{ a: false }} /> as HTMLElement;
+    expect(empty.hasAttribute('class')).toBe(false);
+  });
+});
+
 describe('effect(): обработка ошибок', () => {
   it('onError конкретного эффекта получает исключение вместо проброса', () => {
     const err = new Error('boom');

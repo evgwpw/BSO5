@@ -18,6 +18,28 @@ describe('h()', () => {
     expect(el.className).toBe('x');
   });
 
+  it('normalizes class from arrays, objects and nesting', () => {
+    const active = true;
+    const off = false;
+
+    expect(h('div', { class: ['card', off, null, undefined, 'big'] }).className).toBe('card big');
+    expect(h('div', { class: ['card', ['x', [active && 'y']]] }).className).toBe('card x y');
+    expect(h('div', { class: { card: true, 'card--active': active, 'card--off': off } }).className)
+      .toBe('card card--active');
+    expect(h('div', { class: { card: undefined } }).hasAttribute('class')).toBe(false);
+    expect(h('div', { class: [] }).hasAttribute('class')).toBe(false);
+    expect(h('div', { class: '  spaced  ' }).className).toBe('spaced');
+  });
+
+  it('keeps class reactive when bound with $()', () => {
+    const state = new Reactive({ on: false });
+    const el = h('div', { class: $(state.value, x => (x.on ? 'a' : 'b')) });
+    expect(el.className).toBe('b');
+
+    state.value.on = true;
+    expect(el.className).toBe('a');
+  });
+
   it('applies style object', () => {
     const el = h('div', { style: { color: 'red', paddingTop: '4px' } });
     expect(el.style.color).toBe('red');

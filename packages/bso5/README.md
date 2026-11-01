@@ -2,7 +2,7 @@
 
 > Реактивный DOM без лишнего веса — крошечная библиотека TypeScript с состоянием Signal/Reactive и первоклассной поддержкой JSX. Без фреймворка.
 
-**~4.2 kB min+gzip** · ноль зависимостей · строгий TypeScript · 161 тест
+**~4.7 kB min+gzip** · ноль зависимостей · строгий TypeScript · 200 тестов
 
 [English version](./README.en.md)
 
@@ -168,7 +168,7 @@ import { For, Show } from 'bso5';
 
 | Ключ | Форма значения | Что происходит |
 | --- | --- | --- |
-| `class` / `className` | строка | `el.className = value` (оба синонима, вместе — побеждает последний) |
+| `class` / `className` | строка, массив, объект | `el.className = value`; массив раскрывается (`['card', isActive && 'active']`), объект — карта «имя → флаг», пустой результат не оставляет атрибута |
 | `style` | строка или объект | строка → `setAttribute('style', …)`; объект → `el.style[prop] = value` по одному свойству |
 | `style` в объекте | число | **всегда** добавляется `px`: `{ width: 10 }` → `10px`; безразмерные свойства (`opacity`, `zIndex`, `flexGrow`) задавайте строкой |
 | `style` в объекте | `$()` | свойство становится реактивным |
@@ -303,7 +303,7 @@ npm install bso5
 ```bash
 npm ci              # ставит строго по package-lock
 npm run typecheck   # tsc, строгий режим
-npm test            # vitest (jsdom), 161 тест
+npm test            # vitest (jsdom), 200 тестов
 npm run build       # tsc -> dist/
 npm run bench       # замеры из таблицы ниже (после build)
 ```

@@ -1,10 +1,10 @@
 # bso5
 
-> Тонкая реактивная DOM-библиотека на TypeScript: 4.2 kB min+gzip, ноль зависимостей,
+> Тонкая реактивная DOM-библиотека на TypeScript: 4.7 kB min+gzip, ноль зависимостей,
 > JSX без фреймворка, точечные обновления DOM. Пакет `bso5-components` — headless грид и
 > дерево поверх неё. Состояние: `Signal`, прокси `Reactive`, `$()` для привязки, `<For>`, `<Show>`.
 >
-> A tiny reactive DOM library for TypeScript: 4.2 kB min+gzip, no dependencies, plain JSX,
+> A tiny reactive DOM library for TypeScript: 4.7 kB min+gzip, no dependencies, plain JSX,
 > in-place DOM updates. `bso5-components` adds a headless grid and tree.
 
 **Если читаешь один файл — [docs/API.en.md](docs/API.en.md)** (6k токенов, английский,

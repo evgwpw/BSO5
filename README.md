@@ -1,6 +1,6 @@
 # bso5 — монорепозиторий
 
-> **bso5** — реактивный DOM без лишнего веса (~4.2 kB min+gzip, ноль зависимостей).
+> **bso5** — реактивный DOM без лишнего веса (~4.7 kB min+gzip, ноль зависимостей).
 > **bso5-components** — переиспользуемые headless-компоненты поверх него (Grid, Tree).
 
 ```
@@ -23,7 +23,7 @@ docs/
 
 ```bash
 npm ci               # строгая установка по package-lock
-npm test             # 197 тестов (jsdom), включая исполняемые рецепты документации
+npm test             # 200 тестов (jsdom), включая исполняемые рецепты документации
 npm run typecheck    # строгий TS по обоим пакетам, examples и docs/snippets
 npm run build        # dist/ обоих пакетов (ESM + .d.ts + sourcemaps)
 npm run bench        # замеры грида и дерева (после build)

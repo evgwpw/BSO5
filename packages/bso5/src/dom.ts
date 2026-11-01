@@ -35,10 +35,44 @@ export type StyleValue = string | number | BoundValue<unknown>;
 /** Style object accepted by `h()`/JSX. (РУС: Style-объект, принимаемый `h()`/JSX.) */
 export type StyleObject = Partial<Record<keyof CSSStyleDeclaration, StyleValue>>;
 
+/**
+ * Value of `class`/`className`: a string, a nested array (falsy entries are
+ * skipped) or a map of class names to flags.
+ *
+ * ```ts
+ * h('div', { class: ['card', isActive && 'card--active'] });
+ * h('div', { class: { card: true, 'card--active': isActive } });
+ * ```
+ *
+ * РУС: Значение `class`/`className`: строка, вложенный массив (ложные элементы
+ * пропускаются) или карта «имя класса → флаг».
+ */
+export type ClassValue =
+  | string
+  | false
+  | null
+  | undefined
+  | readonly ClassValue[]
+  | Readonly<Record<string, unknown>>;
+
+/** Normalizes any accepted class value into a space-separated string. (РУС: Приводит любое допустимое значение класса к строке через пробел.) */
+export function classToString(value: ClassValue): string {
+  if (!value) return '';                       // false, '', null, undefined
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) {
+    return value.map(item => classToString(item as ClassValue)).filter(Boolean).join(' ');
+  }
+  const out: string[] = [];
+  for (const [name, on] of Object.entries(value)) {
+    if (on) out.push(name);
+  }
+  return out.join(' ');
+}
+
 /** Attribute object for `h()`; values may be reactive bound values. (РУС: Объект атрибутов для `h()`; значения могут быть реактивными привязанными.) */
 export type Attrs = Record<string, unknown> & {
-  class?: string;
-  className?: string;
+  class?: ClassValue | BoundValue<unknown>;
+  className?: ClassValue | BoundValue<unknown>;
   style?: StyleObject | string;
   /** Receives the created element — the only supported way to grab a node. (РУС: Получает созданный элемент — единственный способ получить узел.) */
   ref?: (el: HTMLElement) => void;
@@ -141,7 +175,13 @@ function applyAttrRaw(el: HTMLElement, key: string, value: unknown): void {
     return;
   }
   if (key === 'class' || key === 'className') {
-    el.className = String(value);
+    // Arrays and objects are normalized here: `['a', cond && 'b']` and
+    // `{ a: true, b: false }` are the two forms a template usually produces.
+    // РУС: Массивы и объекты нормализуются здесь: `['a', cond && 'b']` и
+    // `{ a: true, b: false }` — две формы, которые обычно и получаются в разметке.
+    const text = classToString(value as ClassValue);
+    if (text) el.className = text;
+    else el.removeAttribute('class'); // пустой список не оставляет `class=""`
     return;
   }
   if (key === 'style') {

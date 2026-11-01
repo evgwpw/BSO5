@@ -18,6 +18,9 @@ h('input', el => el.focus());
 | Key | Value | Behaviour |
 | --- | --- | --- |
 | `class`, `className` | string | `el.className = value` (synonyms; if both, the last one wins) |
+| `class`, `className` | array | flattened list: `['card', isActive && 'active']`; nesting works, `false`/`null`/`undefined` are skipped |
+| `class`, `className` | object | name → flag map: `{ card: true, 'card--active': isActive }` |
+| `class`, `className` | empty result | the attribute is **not set** (no leftover `class=""`) |
 | `style` | string | `setAttribute('style', value)` |
 | `style` | object | per property: `el.style[prop] = value` |
 | `style` value | number | **always** gains `px`: `{ width: 10 }` → `10px`; unitless props (`opacity`, `zIndex`) must be strings |
@@ -37,7 +40,7 @@ h('input', el => el.focus());
 nothing; array → recursive; `Node` → as is; `$()` → a live text node.
 
 **Not supported:** object `ref` (`{ current }`), option-free `on*Capture` semantics,
-`class` normalization from arrays/objects, `dangerouslySetInnerHTML`.
+`dangerouslySetInnerHTML`.
 
 ### `hEl(tag, attrs, children[]): HTMLElement`
 

@@ -12,6 +12,7 @@
 - `batch(fn)` — одна волна эффектов и слушателей на группу записей; `untrack(fn)` — чтение без зависимости.
 - `effect(fn, { onError })` и `setEffectErrorHandler(fn)` — ошибки эффектов больше не уходят только в `console.error`.
 - `ref={el => …}` в `h()` и JSX; `on*Capture` ставит обработчик в фазу перехвата.
+- `class`/`className` принимают массив (`['card', isActive && 'active']`, вложенность) и карту «имя → флаг»; пустой результат не оставляет `class=""`. Хелпер нормализации — `classToString`, тип — `ClassValue`.
 - `parseEventProp(key)` и `applyAttr(el, key, value)` в публичном API.
 
 ### Изменено

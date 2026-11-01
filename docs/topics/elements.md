@@ -18,6 +18,9 @@ h('input', el => el.focus());
 | Ключ | Значение | Поведение |
 | --- | --- | --- |
 | `class`, `className` | строка | `el.className = value` (синонимы; при обоих побеждает последний) |
+| `class`, `className` | массив | плоский список: `['card', isActive && 'active']`, вложенность поддерживается, `false`/`null`/`undefined` пропускаются |
+| `class`, `className` | объект | карта «имя → флаг»: `{ card: true, 'card--active': isActive }` |
+| `class`, `className` | пустой результат | атрибут **не ставится** (`class=""` не остаётся) |
 | `style` | строка | `setAttribute('style', value)` |
 | `style` | объект | по свойству: `el.style[prop] = value` |
 | `style` значение-число | `number` | **всегда** `px`: `{ width: 10 }` → `10px`; безразмерные (`opacity`, `zIndex`) — строкой |
@@ -37,7 +40,7 @@ h('input', el => el.focus());
 → ничего; массив → рекурсивно; `Node` → как есть; `$()` → живой текстовый узел.
 
 **Чего нет:** объект-`ref` (`{ current }`), `on*Capture` без суффикса-опции,
-автоматическая нормализация `class` из массива/объекта, `dangerouslySetInnerHTML`.
+`dangerouslySetInnerHTML`.
 
 ### `hEl(tag, attrs, children[]): HTMLElement`
 

@@ -55,6 +55,16 @@ export function searchField(): HTMLInputElement {
   });
 }
 
+/** `class` принимает строку, массив с условиями и карту «имя → флаг». */
+export function classForms(): HTMLElement[] {
+  const isActive = true;
+  return [
+    h('div', { class: 'card' }),
+    h('div', { class: ['card', isActive && 'card--active', false] }),
+    h('div', { class: { card: true, 'card--active': isActive, 'card--off': false } }),
+  ];
+}
+
 /** `attrs` можно передать функцией — единственный способ получить узел без `ref`. */
 export function autofocused(): HTMLInputElement {
   return h('input', el => el.focus());
