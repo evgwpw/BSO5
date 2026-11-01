@@ -24,7 +24,7 @@
  * @module
  */
 
-import { Signal, effect, isBoundValue, type BoundValue } from './reactive.js';
+import { Signal, createScope, dispose, effect, isBoundValue, onScopeDispose, runInScope, type BoundValue, type Scope } from './reactive.js';
 import { boundTextNode, flattenChildren, releaseBindings } from './dom.js';
 import type { JsxChild } from './jsx-runtime.js';
 
@@ -153,22 +153,45 @@ export function For<T>(props: ForProps<T>): DocumentFragment {
   // Unkeyed: full re-render — simple and correct.
   // РУС: Без ключа: полный ре-рендер — просто и корректно.
   if (!keyOf) {
-    effect(() => {
+    // Every pass owns its effects; the previous pass is torn down before the
+    // new nodes go in, so nothing from a removed render keeps running.
+    // РУС: Каждый проход владеет своими эффектами; предыдущий проход сносится
+    // до вставки новых узлов, поэтому снятый рендер ничего не продолжает.
+    let passScope: Scope = createScope();
+    let mounted: Node[] = [];
+    const stop = effect(() => {
       const items = resolveSource(props.each) ?? [];
+      const scope = createScope();
       const nodes: Node[] = [];
-      for (let i = 0; i < items.length; i++) {
-        nodes.push(...toNodes(render(items[i], i)));
-      }
+      runInScope(scope, () => {
+        for (let i = 0; i < items.length; i++) {
+          nodes.push(...toNodes(render(items[i], i)));
+        }
+      });
+      // Tear down the previous pass: effects, then DOM bindings, then nodes.
+      // РУС: Снимаем предыдущий проход: эффекты, затем DOM-привязки, затем узлы.
+      dispose(passScope);
+      for (const n of mounted) releaseBindings(n);
+      passScope = scope;
+      mounted = nodes;
       clearBetween(start, end);
       insertAll(nodes, end);
+    });
+    onScopeDispose(() => {
+      stop();
+      dispose(passScope);
     });
     return frag;
   }
 
   // Keyed: one GROUP of nodes per key (an item may render several nodes).
   // РУС: Keyed: одна ГРУППА узлов на ключ (элемент может рендерить несколько узлов).
-  let prev = new Map<unknown, Node[]>();
-  effect(() => {
+  interface Group {
+    nodes: Node[];
+    scope: Scope;
+  }
+  let prev = new Map<unknown, Group>();
+  const stopKeyed = effect(() => {
     const items = resolveSource(props.each) ?? [];
     const host = end.parentNode;
     if (!host) return;
@@ -179,27 +202,43 @@ export function For<T>(props: ForProps<T>): DocumentFragment {
     // РУС: Собираем новый порядок групп, переиспользуя узлы по ключу. Проверка
     // `next` первой также схлопывает дубликаты ключей в одном батче без
     // потерянного второго рендера (побеждает первое вхождение).
-    const next = new Map<unknown, Node[]>();
+    const next = new Map<unknown, Group>();
     for (let i = 0; i < items.length; i++) {
       const k = keyOf(items[i], i);
-      next.set(k, next.get(k) ?? prev.get(k) ?? toNodes(render(items[i], i)));
+      const existing = next.get(k) ?? prev.get(k);
+      if (existing) {
+        next.set(k, existing);
+        continue;
+      }
+      const scope = createScope();
+      const nodes = runInScope(scope, () => toNodes(render(items[i], i)));
+      next.set(k, { nodes, scope });
     }
 
-    // Place the groups in list order before `end`. insertBefore MOVES nodes
-    // that are already mounted, so reused groups are reordered, not rebuilt;
-    // new groups are mounted here as well.
-    // РУС: Расставляем группы в порядке списка перед `end`. insertBefore
-    // ПЕРЕМЕЩАЕТ уже смонтированные узлы, поэтому переиспользуемые группы
-    // переставляются, а не пересоздаются; новые группы монтируются здесь же.
-    for (const nodes of next.values()) {
-      for (const n of nodes) host.insertBefore(n, end);
+    // Place the groups in list order before `end`. Moving only the nodes that
+    // are actually out of place keeps a no-op update (same order, new array)
+    // free: Node.prototype.insertBefore on a node that is already in position
+    // is the single most expensive DOM call in the whole render.
+    // РУС: Расставляем группы в порядке списка перед `end`. Двигаем только
+    // узлы, стоящие не на своём месте: обновление «тот же порядок, новый
+    // массив» тогда ничего не стоит, а insertBefore для узла на месте —
+    // самый дорогой DOM-вызов всего рендера.
+    let cursor: Node = start;
+    for (const group of next.values()) {
+      for (const n of group.nodes) {
+        if (n.parentNode !== host || n.previousSibling !== cursor) host.insertBefore(n, end);
+        cursor = n;
+      }
     }
 
-    // Drop the groups whose keys left the list, stopping their bindings.
-    // РУС: Удаляем группы, чьи ключи исчезли из списка, останавливая их привязки.
-    for (const [k, nodes] of prev) {
+    // Drop the groups whose keys left the list: stop their effects, release
+    // their DOM bindings, then remove the nodes.
+    // РУС: Удаляем группы, чьи ключи исчезли из списка: останавливаем их
+    // эффекты, снимаем DOM-привязки, затем убираем узлы.
+    for (const [k, group] of prev) {
       if (next.has(k)) continue;
-      for (const n of nodes) {
+      dispose(group.scope);
+      for (const n of group.nodes) {
         if (n.parentNode === host) {
           releaseBindings(n);
           host.removeChild(n);
@@ -207,6 +246,11 @@ export function For<T>(props: ForProps<T>): DocumentFragment {
       }
     }
     prev = next;
+  });
+  onScopeDispose(() => {
+    stopKeyed();
+    for (const group of prev.values()) dispose(group.scope);
+    prev = new Map();
   });
   return frag;
 }
@@ -253,19 +297,45 @@ export function Show(props: ShowProps): DocumentFragment {
   const fallback = props.fallback ?? null;
   let staticMain: Node[] | null = null;
   let staticFallback: Node[] | null = null;
-  effect(() => {
+  // Dynamic branches are rebuilt on every show, so the previous branch owns
+  // its effects and bindings and must be torn down explicitly.
+  // РУС: Динамические ветки строятся заново при каждом показе, поэтому
+  // предыдущая ветка владеет своими эффектами и её надо снимать явно.
+  let branchScope: Scope | null = null;
+  let branchNodes: Node[] = [];
+
+  const releaseBranch = (): void => {
+    if (branchScope) {
+      dispose(branchScope);
+      branchScope = null;
+    }
+    for (const n of branchNodes) releaseBindings(n);
+    branchNodes = [];
+  };
+
+  const stop = effect(() => {
     const show = !!resolveSource(props.when);
     const branch = show ? child : fallback;
     if (branch === null || branch === undefined || branch === false) {
+      releaseBranch();
       clearBetween(start, end);
       return;
     }
     if (typeof branch === 'function') {
-      const nodes = toNodes((branch as () => JsxChild)());
+      releaseBranch();
+      const scope = createScope();
+      const nodes = runInScope(scope, () => toNodes((branch as () => JsxChild)()));
+      branchScope = scope;
+      branchNodes = nodes;
       clearBetween(start, end);
       insertAll(nodes, end);
       return;
     }
+    // Static JSX is rendered once and re-inserted on toggle: it keeps its
+    // effects for the whole lifetime of the Show.
+    // РУС: Статический JSX рендерится один раз и пере-вставляется при
+    // переключении: его эффекты живут всё время жизни Show.
+    releaseBranch();
     let nodes = show ? staticMain : staticFallback;
     if (!nodes) {
       nodes = toNodes(branch as JsxChild);
@@ -274,6 +344,11 @@ export function Show(props: ShowProps): DocumentFragment {
     }
     clearBetween(start, end);
     insertAll(nodes, end);
+  });
+
+  onScopeDispose(() => {
+    stop();
+    releaseBranch();
   });
   return frag;
 }

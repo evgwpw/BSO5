@@ -144,7 +144,7 @@ export class Signal<T> {
   set value(next: T) {
     if (Object.is(this.current, next)) return;
     this.current = next;
-    for (const cb of [...this.listeners]) cb();
+    for (const cb of [...this.listeners]) scheduleCallback(cb);
     notifyEffects(this);
   }
 
@@ -179,6 +179,150 @@ export function signal<T>(initial: T): Signal<T> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Scope: ownership of effects so a detached view can be torn down
+// (РУС: Scope — владение эффектами, чтобы отсоединённую вью можно было снять)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * An ownership scope: collects stop functions of every `effect()` created
+ * while it was current, so `dispose()` tears the whole subtree down at once.
+ * `For`, `Show` and `mount()` create scopes per render pass / per view.
+ *
+ * РУС: Область владения: собирает функции остановки каждого `effect()`,
+ * созданного пока она была текущей, чтобы `dispose()` снял всё поддерево
+ * разом. `For`, `Show` и `mount()` создают области на проход рендера / на вью.
+ */
+export interface Scope {
+  /** Stop functions of the effects owned by this scope. (РУС: Функции остановки эффектов этой области.) */
+  readonly stops: Set<() => void>;
+  /** Once disposed, the scope accepts no new effects. (РУС: После dispose область не принимает новых эффектов.) */
+  disposed: boolean;
+}
+
+/** The scope that owns effects created right now, if any. (РУС: Область, владеющая создаваемыми сейчас эффектами, если есть.) */
+let currentScope: Scope | null = null;
+
+/** Creates an empty ownership scope. (РУС: Создаёт пустую область владения.) */
+export function createScope(): Scope {
+  return { stops: new Set(), disposed: false };
+}
+
+/**
+ * Stops every effect owned by `scope` and rejects further registration.
+ * Idempotent.
+ *
+ * РУС: Останавливает все эффекты области и запрещает дальнейшую регистрацию.
+ * Идемпотентна.
+ */
+export function dispose(scope: Scope): void {
+  if (scope.disposed) return;
+  scope.disposed = true;
+  for (const stop of [...scope.stops]) stop();
+  scope.stops.clear();
+}
+
+/** Runs `fn` with `scope` as the owner of any effect it creates. (РУС: Выполняет `fn`, назначая `scope` владельцем создаваемых эффектов.) */
+export function runInScope<T>(scope: Scope, fn: () => T): T {
+  const prev = currentScope;
+  currentScope = scope;
+  try {
+    return fn();
+  } finally {
+    currentScope = prev;
+  }
+}
+
+/**
+ * Registers a cleanup for the current scope, called by `dispose()`. Outside a
+ * scope the call is a no-op. This is not a per-run `onCleanup`: it fires on
+ * scope teardown only.
+ *
+ * РУС: Регистрирует очистку в текущей области, вызываемую `dispose()`. Вне
+ * области вызов ничего не делает. Это не `onCleanup` на каждый перезапуск
+ * эффекта — очистка срабатывает только при сносе области.
+ */
+export function onScopeDispose(cleanup: () => void): void {
+  const scope = currentScope;
+  if (!scope || scope.disposed) return;
+  scope.stops.add(cleanup);
+}
+
+/** Returns the currently active scope, if any. (РУС: Возвращает текущую активную область, если есть.) */
+export function getCurrentScope(): Scope | null {
+  return currentScope;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// batch() / untrack(): control over when effects run and what they track
+// (РУС: batch() / untrack() — контроль над моментом прогона эффектов и трекингом)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Depth of nested `batch()` calls; jobs accumulate while it is > 0. (РУС: Глубина вложенных `batch()`; пока > 0, задачи накапливаются.) */
+let batchDepth = 0;
+
+/** Queued signal listeners and effects waiting for the batch to end. (РУС: Отложенные слушатели сигналов и эффекты, ждущие конца батча.) */
+const pendingCallbacks = new Set<() => void>();
+const pendingEffects = new Set<EffectRecord>();
+
+/** Runs `job` now, or defers it to the end of the current batch. (РУС: Выполняет `job` сразу либо откладывает до конца текущего батча.) */
+function scheduleCallback(job: () => void): void {
+  if (batchDepth === 0) job();
+  else pendingCallbacks.add(job);
+}
+
+/** Drains the queue; effects may enqueue more work, so loop until stable. (РУС: Разбирает очередь; эффекты могут добавить работу — крутим до стабилизации.) */
+function flushBatch(): void {
+  let guard = 0;
+  while ((pendingCallbacks.size > 0 || pendingEffects.size > 0) && guard++ < 1000) {
+    const callbacks = [...pendingCallbacks];
+    pendingCallbacks.clear();
+    for (const cb of callbacks) cb();
+    const records = [...pendingEffects];
+    pendingEffects.clear();
+    for (const rec of records) runEffect(rec);
+  }
+}
+
+/**
+ * Groups writes so dependent effects run once at the end instead of once per
+ * write. Signal listeners are batched too and deduplicated by identity.
+ *
+ * ```ts
+ * batch(() => { a.value = 1; b.value = 2; }); // один прогон эффекта, а не два
+ * ```
+ *
+ * РУС: Группирует записи: зависимые эффекты выполняются один раз в конце, а не
+ * на каждую запись. Слушатели сигналов тоже батчатся и дедуплицируются.
+ */
+export function batch<T>(fn: () => T): T {
+  batchDepth++;
+  try {
+    return fn();
+  } finally {
+    batchDepth--;
+    if (batchDepth === 0) flushBatch();
+  }
+}
+
+/**
+ * Runs `fn` without registering anything it reads as a dependency. Useful
+ * inside `effect()` when a value must be read but must not retrigger it.
+ *
+ * РУС: Выполняет `fn`, не регистрируя прочитанное как зависимость. Полезно
+ * внутри `effect()`, когда значение нужно прочитать, но не хочется
+ * перезапускаться от него.
+ */
+export function untrack<T>(fn: () => T): T {
+  const prev = runningEffect;
+  runningEffect = null;
+  try {
+    return fn();
+  } finally {
+    runningEffect = prev;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // effect(): auto-tracked re-runnable computation over Signals
 // (РУС: effect() — автотрекаемый перезапускаемый вычислитель над Signal'ами)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -206,14 +350,20 @@ const reactiveDeps = new WeakMap<object, Map<string, Set<EffectRecord>>>();
 function notifyEffects(sig: Signal<unknown>): void {
   const records = signalDeps.get(sig);
   if (!records) return;
-  for (const rec of [...records]) runEffect(rec);
+  for (const rec of [...records]) scheduleEffect(rec);
 }
 
 /** Notifies all effects that read `owner.prop` through a Reactive proxy. (РУС: Уведомляет все эффекты, читавшие `owner.prop` через прокси Reactive.) */
 function notifyReactiveEffects(owner: object, prop: string): void {
   const records = reactiveDeps.get(owner)?.get(prop);
   if (!records) return;
-  for (const rec of [...records]) runEffect(rec);
+  for (const rec of [...records]) scheduleEffect(rec);
+}
+
+/** Runs the effect now, or defers it to the end of the current batch. (РУС: Запускает эффект сразу либо откладывает до конца текущего батча.) */
+function scheduleEffect(rec: EffectRecord): void {
+  if (batchDepth === 0) runEffect(rec);
+  else pendingEffects.add(rec);
 }
 
 /** Registers `sig` as a dependency of the running effect. (РУС: Регистрирует `sig` как зависимость выполняющегося эффекта.) */
@@ -290,11 +440,18 @@ export function effect(fn: () => void): () => void {
     active: true,
     running: false,
   };
-  runEffect(rec);
-  return () => {
+  const stop = (): void => {
     rec.active = false;
     detachDeps(rec);
   };
+  // An effect created during a scoped render is owned by that scope, so
+  // disposing the view stops it without any manual bookkeeping.
+  // РУС: Эффект, созданный во время рендера внутри области, принадлежит этой
+  // области: снос вью останавливает его без ручного учёта.
+  const scope = currentScope;
+  if (scope && !scope.disposed) scope.stops.add(stop);
+  runEffect(rec);
+  return stop;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -448,8 +605,12 @@ export class Reactive<T extends object> {
     get: (target, prop, receiver) => {
       const value = Reflect.get(target, prop, receiver);
       // Track property reads made by a running effect (until disposed).
+      // Only string keys: symbols are read by built-ins (iteration, coercion),
+      // not by a user-facing property path, so tracking them is pure noise.
       // РУС: Трекаем чтения свойств выполняющимся эффектом (пока не disposed).
-      if (!this.disposed) trackReactiveProp(target, String(prop));
+      // Только строковые ключи: символы читают встроенные механизмы, а не путь
+      // пользователя, — трекать их значит копить мусорные зависимости.
+      if (!this.disposed && typeof prop === 'string') trackReactiveProp(target, prop);
       // Leave DOM nodes and exotic objects untouched for speed/safety.
       // РУС: DOM-узлы и экзотические объекты оставляем нетронутыми ради скорости/безопасности.
       if (value !== null && typeof value === 'object' && shouldProxy(value)) {
@@ -563,8 +724,24 @@ export class Reactive<T extends object> {
 
 /** Decides whether a nested value should itself become reactive. (РУС: Решает, должно ли вложенное значение само стать реактивным.) */
 function shouldProxy(value: object): boolean {
-  if (typeof window !== 'undefined' && typeof Node !== 'undefined' && value instanceof Node) return false;
+  // DOM-узлы: прокси ломает их внутренние слоты.
+  // РУС: DOM-узлы — прокси ломает их внутренние слоты.
+  if (typeof Node !== 'undefined' && value instanceof Node) return false;
   if (value instanceof Date || value instanceof RegExp) return false;
+  // Встроенные объекты с внутренними слотами: метод, вызванный через прокси,
+  // получает прокси как receiver и бросает TypeError
+  // («called on incompatible receiver»). Оборачивать их нельзя.
+  // РУС: встроенные объекты с внутренними слотами — метод через прокси
+  // получает прокси как receiver и бросает TypeError.
+  if (value instanceof Map || value instanceof Set) return false;
+  if (value instanceof WeakMap || value instanceof WeakSet) return false;
+  if (value instanceof Promise || value instanceof Error) return false;
+  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return false;
+  if (typeof Blob !== 'undefined' && value instanceof Blob) return false;
+  if (typeof AbortController !== 'undefined' && value instanceof AbortController) return false;
+  if (typeof AbortSignal !== 'undefined' && value instanceof AbortSignal) return false;
+  if (typeof FormData !== 'undefined' && value instanceof FormData) return false;
+  if (typeof URL !== 'undefined' && (value instanceof URL || value instanceof URLSearchParams)) return false;
   return true;
 }
 

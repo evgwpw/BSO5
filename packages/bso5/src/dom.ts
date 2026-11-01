@@ -19,16 +19,29 @@
  * @module
  */
 
-import { isBoundValue, type BoundValue } from './reactive.js';
+import { createScope, dispose, isBoundValue, runInScope, type BoundValue } from './reactive.js';
 
 /** Anything that can be rendered as an element child. (РУС: Всё, что может быть отрендерено как ребёнок элемента.) */
 export type Content = string | number | boolean | null | undefined | Node | BoundValue | Content[];
+
+/**
+ * Value of a single style property: CSS text, a number (rendered as `px`) or a
+ * reactive bound value.
+ * (РУС: Значение одного CSS-свойства: текст, число (рендерится как `px`) или
+ * реактивное привязанное значение.)
+ */
+export type StyleValue = string | number | BoundValue<unknown>;
+
+/** Style object accepted by `h()`/JSX. (РУС: Style-объект, принимаемый `h()`/JSX.) */
+export type StyleObject = Partial<Record<keyof CSSStyleDeclaration, StyleValue>>;
 
 /** Attribute object for `h()`; values may be reactive bound values. (РУС: Объект атрибутов для `h()`; значения могут быть реактивными привязанными.) */
 export type Attrs = Record<string, unknown> & {
   class?: string;
   className?: string;
-  style?: Partial<CSSStyleDeclaration> | string;
+  style?: StyleObject | string;
+  /** Event handlers keep their `Event` context so `e.target` is not `any`. (РУС: Обработчики сохраняют контекст `Event`, чтобы `e.target` не был `any`.) */
+  [key: `on${string}`]: ((event: Event) => void) | undefined;
 };
 
 /** Normalizes any Content into a flat list of renderable Nodes. (РУС: Нормализует любой Content в плоский список рендерабельных узлов.) */
@@ -142,8 +155,7 @@ function applyAttrRaw(el: HTMLElement, key: string, value: unknown): void {
     return;
   }
   if (key.startsWith('on') && typeof value === 'function') {
-    const event = key.slice(2).toLowerCase();
-    el.addEventListener(event, value as EventListener);
+    el.addEventListener(eventNameOf(key), value as EventListener);
     return;
   }
   if (key === 'value' || key === 'checked' || key === 'selected' || key === 'disabled') {
@@ -161,6 +173,15 @@ function applyAttrRaw(el: HTMLElement, key: string, value: unknown): void {
   // Fallback: attribute (data-*, aria-*, custom).
   // РУС: Фолбэк: атрибут (data-*, aria-*, кастомные).
   el.setAttribute(key, typeof value === 'object' ? stringify(value) : String(value));
+}
+
+/** Maps a JSX handler prop to a DOM event name. (РУС: Переводит проп-обработчик в имя DOM-события.) */
+function eventNameOf(key: string): string {
+  const raw = key.slice(2).toLowerCase();
+  // В DOM событие называется `dblclick`, а не `doubleclick`: без этой
+  // перекладки `onDoubleClick` молча не срабатывает никогда.
+  // РУС: в DOM событие называется `dblclick` — без перекладки обработчик молчит.
+  return raw === 'doubleclick' ? 'dblclick' : raw;
 }
 
 /**
@@ -190,16 +211,28 @@ export function hEl(
   children: Content[],
 ): HTMLElement {
   const el = document.createElement(tag);
+  // `<select>.value` must be applied after its <option> children exist,
+  // otherwise the assignment is silently dropped by the browser.
+  // РУС: `<select>.value` надо применять после появления <option>, иначе
+  // браузер молча отбрасывает присваивание.
+  let deferredValue: unknown;
+  let hasDeferredValue = false;
   if (typeof attrs === 'function') {
     attrs(el);
   } else if (attrs) {
     for (const [key, value] of Object.entries(attrs)) {
       if (key === 'children') continue; // handled separately by JSX runtime
       // РУС: обрабатывается отдельно JSX-рантаймом
+      if (tag === 'select' && key === 'value') {
+        deferredValue = value;
+        hasDeferredValue = true;
+        continue;
+      }
       applyAttr(el, key, value);
     }
   }
   appendChildren(el, children);
+  if (hasDeferredValue) applyAttr(el, 'value', deferredValue);
   return el;
 }
 
@@ -221,3 +254,46 @@ export function appendChildren(parent: Node, children: Content[]): void {
 }
 
 export { applyAttr };
+
+/** The handle returned by `mount()`. (РУС: Ручка, которую возвращает `mount()`.) */
+export interface Mounted {
+  /** The mounted node. (РУС: Смонтированный узел.) */
+  readonly node: Node;
+  /** Stops bindings and effects of the view and detaches it. Idempotent. (РУС: Останавливает привязки и эффекты вью и отсоединяет его. Идемпотентна.) */
+  readonly dispose: () => void;
+}
+
+/**
+ * Mounts a view into `target` and returns a handle that tears it down:
+ * reactive DOM bindings are released, owned effects are stopped, the node is
+ * removed.
+ *
+ * Pass a **thunk** (`() => <App />`) — not a ready node — to hand ownership of
+ * the view's effects to `mount()`: a view built before the call has already
+ * created its effects outside any scope, and those cannot be stopped later.
+ *
+ * ```ts
+ * const app = mount(document.body, () => <App />);
+ * app.dispose(); // bindings stopped, effects stopped, node removed
+ * ```
+ *
+ * РУС: Монтирует вью в `target` и возвращает ручку для снятия: реактивные
+ * DOM-привязки освобождаются, эффекты останавливаются, узел удаляется.
+ *
+ * Передавайте **танку** (`() => <App />`), а не готовый узел: вью, построенный
+ * до вызова, уже создал свои эффекты вне области, и остановить их потом нельзя.
+ */
+export function mount(target: Element | DocumentFragment, view: Node | (() => Node)): Mounted {
+  const scope = createScope();
+  const node = typeof view === 'function' ? runInScope(scope, view) : view;
+  target.appendChild(node);
+  let disposed = false;
+  const disposeView = (): void => {
+    if (disposed) return;
+    disposed = true;
+    releaseBindings(node);
+    dispose(scope);
+    node.parentNode?.removeChild(node);
+  };
+  return { node, dispose: disposeView };
+}
