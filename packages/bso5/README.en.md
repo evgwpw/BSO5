@@ -1,6 +1,6 @@
 # bso5
 
-Reactive DOM without the bloat. A tiny (~3.4 kB min+gzip) TypeScript library that gives you
+Reactive DOM without the bloat. A tiny (~4.2 kB min+gzip) TypeScript library that gives you
 signals, deep reactive state and first-class **JSX support — with no framework, no virtual DOM
 and no compiler beyond the standard JSX transform**.
 
@@ -218,6 +218,83 @@ When a view built with `$()` bindings is detached from the document, call
 `releaseBindings(root)` to stop its subscriptions — removed nodes stop
 receiving updates and become garbage-collectable.
 
+### `h()`: attribute reference
+
+`h(tag, attrs, ...children)` and JSX share one implementation, so this table
+holds for both. `attrs` may also be a function: `h('input', el => el.focus())`.
+
+| Key | Value form | What happens |
+| --- | --- | --- |
+| `class` / `className` | string | `el.className = value` (both work; the last one wins) |
+| `style` | string or object | string → `setAttribute('style', …)`; object → `el.style[prop] = value` per property |
+| `style` property | number | **always** gains `px` (`{ width: 10 }` → `10px`); unitless props (`opacity`, `zIndex`) must be strings |
+| `style` property | `$()` | the property becomes reactive |
+| `onClick`, `onInput`, … | function | `addEventListener('click' / 'input' / …)`; **camelCase required**, `onDoubleClick` maps to `dblclick` |
+| `value`, `checked`, `selected`, `disabled` | any | assigned as a **property**, not a string; `<select>.value` is applied after its `<option>`s exist |
+| `dataset` | object | `el.dataset[key] = String(value)` |
+| `data-*`, `aria-*`, other | any | `setAttribute` when the element has no such property, property assignment otherwise |
+| any key | `null` / `undefined` / `false` | `removeAttribute(key)` — the attribute is not set |
+| any key | `$()` | applied now and kept in sync with the source |
+| `ref` | — | **not supported**; use `h(tag, el => …)` or `effect()` |
+
+Children: string and number → text node; `null`/`undefined`/`true`/`false` →
+nothing; array → recursive; `Node` → as is; `$()` → a live text node.
+
+```ts
+import { h } from 'bso5';
+
+const input = h('input', {
+  type: 'text',
+  class: 'field',
+  style: { width: 200, color: 'tomato' },   // 200 → 200px
+  disabled: false,                          // attribute not set
+  dataset: { role: 'query' },               // data-role="query"
+  'aria-label': 'Search',
+  onInput: e => console.log((e.target as HTMLInputElement).value),
+});
+```
+
+### Lifecycle: `mount()`, scopes, `batch()`
+
+`<For>` and `<Show>` own the effects of their subtree: a re-render, a branch
+switch or a removed key stops their effects and releases their DOM bindings.
+For a whole view, use `mount()`:
+
+```tsx
+import { mount } from 'bso5';
+
+const app = mount(document.body, () => <App />); // pass a thunk
+app.dispose(); // bindings released, effects stopped, node removed
+```
+
+Pass a **thunk** (`() => <App />`), not a ready node: a view built before the
+call has already created its effects outside any scope, and nothing can stop
+them later.
+
+Custom components build on the same primitives:
+
+```ts
+import { createScope, runInScope, dispose, onScopeDispose } from 'bso5';
+
+const scope = createScope();
+runInScope(scope, () => { /* effects created here belong to scope */ });
+onScopeDispose(() => { /* cleanup on dispose(scope) */ });
+dispose(scope); // everything created inside is stopped
+```
+
+`batch(fn)` postpones effect and listener runs until the end of the block: two
+writes produce one run. `untrack(fn)` reads values without creating a
+dependency.
+
+```ts
+import { signal, effect, batch, untrack } from 'bso5';
+
+const a = signal(1);
+const b = signal(2);
+effect(() => { console.log(a.value, untrack(() => b.value)); });
+batch(() => { a.value = 10; b.value = 20; }); // one effect run
+```
+
 ### Components
 
 A component is any function from props to a DOM node. No hooks, no re-renders —
@@ -247,20 +324,27 @@ Two complete apps live in [`examples/`](../../examples) (at the monorepo root):
   ```sh
   npm run example:dataview
   ```
+- [`examples/importmap`](../../examples/importmap) — no bundler at all: `<script type="importmap">`
+  resolves both packages straight to `dist/`. Run `npm run build`, then serve the repo root
+  (e.g. `py -3 -m http.server 8080`) and open `/examples/importmap/`.
 
 ## Development
 
+Node ≥ 22.12 is required (vitest 5), npm ≥ 10 (lockfile v3).
+
 ```sh
-npm run build           # tsc → dist/ of both packages (run at the repo root)
-npm test                # vitest (jsdom), 135 tests across both packages
+npm ci                  # strict install from package-lock.json
+npm run build           # tsc → dist/ of both packages
+npm test                # vitest (jsdom), 161 tests across both packages
 npm run test:coverage   # with V8 coverage
-npm run typecheck       # strict tsc over both packages + examples
+npm run typecheck       # strict tsc over both packages, examples and docs/snippets
+npm run bench           # grid/tree timings quoted in the README (after build)
 ```
 
 ## Package layout
 
 ```
-bso5                    → Signal, Reactive, effect, watch, $, h, boundTextNode
+bso5                    → Signal, Reactive, effect, batch, untrack, watch, $, h, mount, createScope/dispose, boundTextNode
 bso5/jsx-runtime        → jsx, jsxs, jsxDEV, createElement, Fragment, JSX types
 bso5/jsx-dev-runtime    → same module (dev-mode entry point)
 ```

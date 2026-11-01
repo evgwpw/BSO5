@@ -38,6 +38,8 @@
     "examples/counter/**/*.tsx",
     "examples/dataview/**/*.ts",
     "examples/dataview/**/*.tsx",
+    "docs/snippets/**/*.ts",
+    "docs/snippets/**/*.tsx",
     "vitest.config.ts"
   ],
   "exclude": ["node_modules", "dist", "packages/*/dist"]

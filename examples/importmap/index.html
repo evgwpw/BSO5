@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>bso5 без сборщика: importmap</title>
+<style>
+  body { font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; margin: 24px; max-width: 760px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .hint { color: #666; font-size: 13px; margin: 0 0 20px; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+  button { padding: 4px 10px; }
+  .counter { font-variant-numeric: tabular-nums; min-width: 3ch; text-align: center; }
+  table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e5e5e5; }
+  th { cursor: pointer; user-select: none; background: #fafafa; }
+  tr.group-row { background: #f4f6fa; font-weight: 600; }
+  .tree .node { padding-left: 0; }
+  .tree .kids { padding-left: 16px; }
+  .tree .row { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .tree .caret { width: 1ch; color: #888; }
+  .tree .name.match { background: #fff3c4; }
+  .tree .meta { color: #888; font-size: 12px; }
+  .empty { color: #888; font-style: italic; padding: 8px 0; }
+  .chip { color: #888; font-size: 12px; }
+</style>
+<!--
+  Точка входа без сборщика: карта импортов ведёт прямо на dist собранных
+  пакетов. Ни vite, ни tsc, ни node_modules — только статический сервер.
+
+  Модули по file:// открываются только в части браузеров (Chrome блокирует
+  ES-модули из file://). Из корня монорепо: `py -3 -m http.server 8080`,
+  затем http://localhost:8080/examples/importmap/.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "bso5": "../../packages/bso5/dist/index.js",
+    "bso5/jsx-runtime": "../../packages/bso5/dist/jsx-runtime.js",
+    "bso5-components": "../../packages/bso5-components/dist/index.js"
+  }
+}
+</script>
+</head>
+<body>
+<h1>bso5 без сборщика</h1>
+<p class="hint">
+  Счётчик на <code>signal()</code> + <code>h()</code>, таблица и дерево из
+  <code>bso5-components</code>. Всё подключено картой импортов, без шага сборки.
+</p>
+
+<div class="row">
+  <button id="dec">−</button>
+  <span class="counter" id="count"></span>
+  <button id="inc">+</button>
+  <span class="hint" id="parity"></span>
+</div>
+
+<div id="grid"></div>
+<div id="tree"></div>
+
+<script type="module">
+  import { signal, h, $, mount } from 'bso5';
+  import { Grid, Tree } from 'bso5-components';
+
+  /* ── счётчик: signal + $() в текстовом ребёнке ───────────── */
+  const count = signal(0);
+  mount(document.getElementById('count'), () => h('span', null, $(count)));
+  document.getElementById('dec').onclick = () => { count.value--; };
+  document.getElementById('inc').onclick = () => { count.value++; };
+  const parity = signal('чётное');
+  // Производное значение: собираем эффектом, чтобы не тянуть computed().
+  import('bso5').then(({ effect }) => {
+    effect(() => { parity.value = count.value % 2 === 0 ? 'чётное' : 'нечётное'; });
+    mount(document.getElementById('parity'), () => h('span', null, 'сейчас ', $(parity)));
+  });
+
+  /* ── таблица с группировкой ──────────────────────────────── */
+  const issues = signal([
+    { id: 4101, title: 'Login fails on Safari 17', project: 'Web App', sev: 'critical' },
+    { id: 4102, title: 'Flaky e2e: checkout flow', project: 'Web App', sev: 'high' },
+    { id: 4201, title: 'Migration stalls on pg 14', project: 'Backend', sev: 'high' },
+    { id: 4202, title: 'Add request tracing', project: 'Backend', sev: 'medium' },
+  ]);
+
+  mount(document.getElementById('grid'), () => Grid({
+    rows: issues,
+    columns: [
+      { key: 'id', header: 'ID', sort: r => r.id, cell: r => r.id },
+      { key: 'title', header: 'Задача', sort: r => r.title, cell: r => r.title },
+      { key: 'sev', header: 'Важность', sort: r => r.sev, cell: r => r.sev },
+    ],
+    groupBy: r => r.project,
+    rowKey: r => r.id,
+    searchPlaceholder: 'Поиск по задачам…',
+    empty: 'Ничего не найдено.',
+  }));
+
+  /* ── дерево ──────────────────────────────────────────────── */
+  mount(document.getElementById('tree'), () => Tree({
+    root: signal({
+      label: 'bso5',
+      meta: '2 ветки',
+      children: [
+        { label: 'packages', meta: '2', children: [
+          { label: 'bso5', meta: 'ядро' },
+          { label: 'bso5-components', meta: 'грид и дерево' },
+        ]},
+        { label: 'examples', meta: '3', children: [
+          { label: 'importmap', meta: 'этот пример' },
+        ]},
+      ],
+    }),
+    searchPlaceholder: 'Фильтр…',
+  }));
+</script>
+</body>
+</html>
