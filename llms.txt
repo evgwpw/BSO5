@@ -26,6 +26,9 @@
 - [COMPROMISES.md](docs/COMPROMISES.md): осознанные компромиссы — keyed-`<For>`, трассировка путей через Proxy, владение эффектами, минимальные перемещения узлов.
 - [CHANGELOG.md](CHANGELOG.md): изменения по версиям, включая ломающие.
 
+Точные типы: `packages/bso5/dist/index.d.ts` и `packages/bso5-components/dist/index.d.ts`
+(генерируются `npm run build`, там же `.d.ts.map` на исходники).
+
 ## Примеры
 
 - [examples/importmap](examples/importmap/index.html): работа без сборщика на `importmap`.

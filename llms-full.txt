@@ -293,6 +293,18 @@ h('input', el => el.focus());
 
 То же, но `children` — массив (используется JSX-рантаймом; публично полезен редко).
 
+### Низкоуровневые экспорты
+
+Используются внутри `h()` и `<For>`; публичны, потому что нужны для своих
+рендереров и обёрток.
+
+| Экспорт | Сигнатура | Что делает |
+| --- | --- | --- |
+| `flattenChildren` | `(children: Content[]) => Array<Node \| string \| number \| BoundValue>` | Раскрывает вложенные массивы, отбрасывает `null`/`undefined`/`true`/`false` |
+| `appendChildren` | `(parent: Node, children: Content[]) => void` | Вставляет детей по правилам §4: строки → текстовые узлы, `$()` → живые текстовые узлы, `Node` — как есть |
+| `boundTextNode` | `(value: BoundValue) => Text` | Создаёт текстовый узел с привязкой; привязка регистрируется и снимается `releaseBindings` |
+| `applyAttr` | `(el: HTMLElement, key: string, value: unknown) => void` | Применяет один атрибут по таблице §4, включая `$()`-значения и `ref` |
+
 ### `parseEventProp(key): { event: string; capture: boolean }`
 
 `'onDoubleClick'` → `{ event: 'dblclick', capture: false }`,

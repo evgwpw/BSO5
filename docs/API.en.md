@@ -280,6 +280,17 @@ nothing; array → recursive; `Node` → as is; `$()` → a live text node.
 
 Same, but `children` is an array (used by the JSX runtime; rarely useful publicly).
 
+### Low-level exports
+
+Used inside `h()` and `<For>`; public because custom renderers and wrappers need them.
+
+| Export | Signature | What it does |
+| --- | --- | --- |
+| `flattenChildren` | `(children: Content[]) => Array<Node \| string \| number \| BoundValue>` | Flattens nested arrays, drops `null`/`undefined`/`true`/`false` |
+| `appendChildren` | `(parent: Node, children: Content[]) => void` | Appends children by the §4 rules: strings → text nodes, `$()` → live text nodes, `Node` as is |
+| `boundTextNode` | `(value: BoundValue) => Text` | Creates a text node with a binding; the binding is registered and released by `releaseBindings` |
+| `applyAttr` | `(el: HTMLElement, key: string, value: unknown) => void` | Applies a single attribute by the §4 table, including `$()` values and `ref` |
+
 ### `parseEventProp(key): { event: string; capture: boolean }`
 
 `'onDoubleClick'` → `{ event: 'dblclick', capture: false }`,
