@@ -20,6 +20,8 @@
     "test:coverage": "vitest run --coverage",
     "bench": "node scripts/bench.mjs",
     "pack:check": "npm pack --dry-run -w packages/bso5 && npm pack --dry-run -w packages/bso5-components",
+    "docs:llm": "node scripts/build-llm-docs.mjs",
+    "docs:check": "node scripts/build-llm-docs.mjs --check",
     "example": "vite serve examples/counter",
     "example:dataview": "vite serve examples/dataview"
   },
