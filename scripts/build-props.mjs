@@ -70,7 +70,9 @@ for (const source of SOURCES) {
   const abs = join(root, source.file);
   const sf = ts.createSourceFile(
     source.file,
-    readFileSync(abs, 'utf8'),
+    // Нормализация переводов строк: иначе в клоне с CRLF описания и разметка
+    // сравнивались бы с другими переводами строк и файл «устаревал».
+    readFileSync(abs, 'utf8').replace(/\r\n/g, '\n'),
     ts.ScriptTarget.ESNext,
     true,
     source.file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,

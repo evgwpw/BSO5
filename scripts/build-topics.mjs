@@ -74,7 +74,8 @@ const LANGS = [
     about: 'Reference section {n}' },
 ];
 
-const read = rel => readFileSync(join(root, rel), 'utf8');
+/** Читает источник с нормализацией переводов строк (см. build-llm-docs.mjs). */
+const read = rel => readFileSync(join(root, rel), 'utf8').replace(/\r\n/g, '\n');
 
 /**
  * Перебазирует относительные ссылки раздела под глубину файла темы: раздел живёт

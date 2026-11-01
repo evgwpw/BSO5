@@ -45,7 +45,11 @@ const SETS = [
   },
 ];
 
-const read = rel => readFileSync(join(root, rel), 'utf8');
+/**
+ * Читает источник с нормализацией переводов строк: на Windows git выкладывает
+ * файлы с CRLF, и без этого сводный файл «устаревал» в свежем клоне.
+ */
+const read = rel => readFileSync(join(root, rel), 'utf8').replace(/\r\n/g, '\n');
 
 function build(set) {
   const parts = set.files.map(rel =>
