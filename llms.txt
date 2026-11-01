@@ -1,0 +1,43 @@
+# bso5
+
+> bso5 — крошечная реактивная DOM-библиотека на TypeScript (4.2 kB min+gzip, ноль
+> зависимостей) с первоклассным JSX и точечными обновлениями DOM; `bso5-components` —
+> headless-грид и дерево поверх неё. Состояние: `Signal`, глубокий прокси `Reactive`,
+> `$()` для привязки значений в разметку, `<For>`/`<Show>` для списков и условий.
+
+Ядро — 0.4.0, компоненты — 0.2.0. Браузер: ES2020. Сборка не обязательна: `dist` — ESM,
+подключается через `<script type="importmap">`.
+
+## Документация
+
+- [API.md](docs/API.md): полный справочник — сигнатуры `Signal`/`Reactive`/`effect`/`computed`/`$`/`h`/`mount`/`<For>`/`<Show>`, пропсы `Grid`/`Tree`, семантика, ограничения.
+- [GUIDE.md](docs/GUIDE.md): рецепты по задачам (форма, keyed-список, загрузка данных, грид, дерево, вью с жизненным циклом) и таблица «симптом → причина → что делать».
+- [TREE_GRID.md](docs/TREE_GRID.md): разметка компонентов, карта CSS-классов, минимальный CSS.
+- [docs/README.md](docs/README.md): навигация по задачам и правила поддержки документации.
+- [packages/bso5/README.md](packages/bso5/README.md): вводный README ядра (концепции, справочник `h()`, жизненный цикл).
+- [packages/bso5-components/README.md](packages/bso5-components/README.md): вводный README компонентов.
+- [COMPROMISES.md](docs/COMPROMISES.md): осознанные компромиссы — keyed-`<For>`, трассировка путей через Proxy, владение эффектами, минимальные перемещения узлов.
+- [CHANGELOG.md](CHANGELOG.md): изменения по версиям, включая ломающие.
+
+## Примеры
+
+- [examples/importmap](examples/importmap/index.html): работа без сборщика на `importmap`.
+- [examples/counter](examples/counter): счётчик с историей, только ядро.
+- [examples/dataview](examples/dataview): грид и дерево на `bso5-components`.
+
+## Команды
+
+```bash
+npm ci               # установка по lock (Node >= 22.12, npm >= 10)
+npm test             # 183 теста (jsdom)
+npm run typecheck    # tsc, включая компилируемые сниппеты документации
+npm run build        # dist обоих пакетов (ESM + .d.ts + sourcemaps)
+npm run bench        # замеры грида и дерева
+npm run docs:llm     # пересобрать llms-full.txt
+npm run docs:check   # проверить, что llms-full.txt актуален
+```
+
+## Optional
+
+- [llms-full.txt](llms-full.txt): вся документация одним файлом (~60 kB) для загрузки в контекст модели.
+- [docs/REVIEW-2026-11-01.html](docs/REVIEW-2026-11-01.html): историческая внешняя оценка библиотеки и плана доработок.

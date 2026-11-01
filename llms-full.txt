@@ -1,0 +1,1783 @@
+# bso5 — полная документация одним файлом
+
+> Сгенерировано `scripts/build-llm-docs.mjs` из перечисленных ниже файлов.
+> Не редактируйте вручную: правьте источники и запустите `npm run docs:llm`.
+> Версии: bso5 0.4.0, bso5-components 0.2.0.
+
+Источники (6): docs/API.md, docs/GUIDE.md, docs/TREE_GRID.md, packages/bso5/README.md, packages/bso5-components/README.md, docs/README.md.
+
+==============================================================================
+FILE: docs/API.md
+==============================================================================
+
+# bso5 — справочник API
+
+Полное описание публичного API обоих пакетов: сигнатуры, семантика, крайние случаи
+и известные границы. Написан так, чтобы его можно было читать и человеку, и агенту:
+одна единица знания — один раздел с явной сигнатурой.
+
+Версии: `bso5` **0.4.0**, `bso5-components` **0.2.0**. Размеры: 4.2 и 2.5 kB min+gzip,
+зависимостей нет (кроме peer `bso5` у компонентов).
+
+- Пошаговые рецепты — [GUIDE.md](./GUIDE.md).
+- Разметка, классы и CSS компонентов — [TREE_GRID.md](./TREE_GRID.md).
+- Осознанные компромиссы — [COMPROMISES.md](./COMPROMISES.md).
+
+---
+
+## 0. Установка и требования
+
+```bash
+npm install bso5                 # только ядро
+npm install bso5 bso5-components # ядро + компоненты
+```
+
+| Что | Требование |
+| --- | --- |
+| Браузер | ES2020, нативные ES-модули |
+| Сборка | любая с JSX-трансформом `react-jsx` (tsc, esbuild, vite) — или никакой: `dist` уже ESM |
+| Разработка пакета | Node ≥ 22.12 (vitest 5), npm ≥ 10 (lockfile v3) |
+| TypeScript | ≥ 5.0 |
+
+`tsconfig.json` для JSX:
+
+```jsonc
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "bso5"          // или "bso5-components" — рантайм тот же
+  }
+}
+```
+
+Карта экспортов пакета `bso5`: `"."`, `"./jsx-runtime"`, `"./jsx-dev-runtime"`,
+`"./package.json"`. У `bso5-components` — те же плюс собственный реэкспорт рантайма.
+
+Без сборщика:
+
+```html
+<script type="importmap">
+{ "imports": {
+    "bso5": "./packages/bso5/dist/index.js",
+    "bso5/jsx-runtime": "./packages/bso5/dist/jsx-runtime.js",
+    "bso5-components": "./packages/bso5-components/dist/index.js"
+} }
+</script>
+<script type="module">import { h, signal } from 'bso5'; /* … */</script>
+```
+
+Готовый пример — [`examples/importmap`](../examples/importmap/index.html).
+
+---
+
+## 1. Состояние
+
+### `Signal<T>`
+
+Атомарное реактивное значение.
+
+```ts
+class Signal<T> {
+  constructor(initial: T);
+  get value(): T;                 // чтение; внутри effect() регистрирует зависимость
+  set value(next: T);             // запись; уведомляет только при изменении (Object.is)
+  peek(): T;                      // чтение без трекинга
+  update(fn: (current: T) => T): void;   // запись от текущего значения, без трекинга чтения
+  subscribe(cb: () => void): () => void; // ручная подписка; возвращает отписку
+}
+```
+
+- `set` сравнивает через `Object.is`: `signal(0); s.value = 0` — уведомления не будет.
+- `subscribe` вызывает колбэк **синхронно** сразу после записи (внутри `batch` — один раз в конце).
+- Подписки хранятся в `Set`, повторная подписка того же колбэка не дублируется.
+
+### `signal<T>(initial: T): Signal<T>`
+
+```ts
+const count = signal(0);
+```
+
+### `Reactive<T extends object>`
+
+Глубокий реактивный прокси над обычным объектом или экземпляром класса.
+
+```ts
+class Reactive<T extends object> {
+  constructor(raw: T);            // бросит, если объект уже обёрнут другим Reactive
+  get value(): T;                 // прокси-дерево; вложенные объекты оборачиваются лениво
+  get target(): T;                // сырой объект: чтения/записи не трекаются
+  watch(path: ((t: T) => any) | string, cb: () => void): () => void;
+  dispose(): void;                // останавливает подписки и трекинг эффектов
+}
+```
+
+- `watch(x => x.user.name, cb)` срабатывает и на `x.user.name = …`, и на `x.user = { … }`
+  (вложенный путь перепривязывается к новому объекту).
+- Индексная нотация работает: `x => x.rows[0].done`, `'rows.0.done'`.
+- Аксессор обязан быть **простой чистой цепочкой свойств**: он выполняется один раз
+  для трассировки пути. Выражения (`x => x.a + 1`), вызовы методов и `async` отвергаются —
+  `watch()` бросит ошибку, `$()` вернёт нереактивное значение.
+- `dispose()` делает прокси инертным для реактивности: чтения и записи работают,
+  подписчики больше не уведомляются.
+
+**Что не оборачивается** (проходит насквозь, без прокси и без реактивности):
+`Map`, `Set`, `WeakMap`, `WeakSet`, `Promise`, `Date`, `RegExp`, `Error`,
+`ArrayBuffer` и типизированные массивы, `Blob`/`File`, `AbortController`/`AbortSignal`,
+`FormData`, `URL`/`URLSearchParams`, любые DOM-узлы.
+
+```
+model.value.cache.set(k, v);   // работает, но НЕ уведомляет подписчиков
+model.value.cache = new Map(…); // уведомляет — меняйте значение целиком
+```
+
+Причина: метод встроенного объекта, вызванный через прокси, получает прокси как
+`receiver` и бросает `TypeError: Method Map.prototype.set called on incompatible receiver`.
+
+### `watch(source, path, cb): () => void`
+
+Свободная форма подписки: `source` — `Signal` (тогда `path` игнорируется) или
+`Reactive`-значение/прокси (тогда `path` — аксессор или строка).
+
+```ts
+const stop = watch(model.value, x => x.user.name, () => { /* … */ });
+```
+
+### `getPropertyName(fn): string | null`
+
+Трассирует путь аксессора (`x => x.items[0].title` → `'items.0.title'`).
+Возвращает `null`, если аксессор не является простой цепочкой свойств.
+Экспортируется для инструментов; в обычном коде не нужен.
+
+### `Reactive` vs `Signal`: что выбирать
+
+| Нужно | Берите |
+| --- | --- |
+| одно значение, простые обновления | `Signal` |
+| объект/модель с вложенными полями и точечными подписками на пути | `Reactive` |
+| производное значение от нескольких источников | `computed` |
+| значение, которое можно положить и в атрибут, и в текст | `$()` |
+
+---
+
+## 2. Реактивные вычисления
+
+### `effect(fn, options?): () => void`
+
+Выполняет `fn` сразу и перезапускает при изменении любого `Signal`/свойства
+`Reactive`, прочитанного внутри (синхронно, если не в `batch`).
+
+```ts
+interface EffectOptions {
+  onError?: (error: unknown) => void;
+}
+```
+
+- Возвращает функцию остановки (идемпотентна).
+- Перед каждым прогоном зависимости сбрасываются: непрочитанные больше не триггерят.
+- Исключение внутри эффекта **не пробрасывается** в код, записавший сигнал.
+  Приёмник по умолчанию — `console.error`; переопределяется `onError` эффекта или
+  `setEffectErrorHandler`.
+- Эффект, читающий и пишущий один и тот же сигнал, не зацикливается: защита от
+  синхронной рекурсии (`rec.running`) — но лучше читать через `peek()`/`update()`.
+- Вложенные эффекты поддерживаются; эффект, созданный внутри области владения,
+  останавливается вместе с ней (см. §5).
+
+### `setEffectErrorHandler(handler: ((error: unknown) => void) | null): void`
+
+Глобальный приёмник ошибок эффектов. `null` возвращает `console.error`.
+Приоритет: `onError` эффекта → глобальный обработчик → `console.error`.
+Если сам обработчик бросит, ошибка уйдёт в `console.error` и граф продолжит работу.
+
+### `computed<T>(fn): Signal<T>`
+
+Производное значение: пересчитывается при изменении зависимостей, уведомляет
+читателей только если результат изменился (`Object.is`).
+
+```ts
+const count = signal(2);
+const doubled = computed(() => count.value * 2);   // Signal<number>
+doubled.value;                                      // 4
+```
+
+- Пересчёт **энергичный** (на изменение зависимости, не на чтение): ленивого кеша нет.
+- Возвращает `Signal`, поэтому годится для `$()`, `each`, `<Show when>` и чтения в `effect()`.
+- Внутри области (`mount()`, `<For>`, `<Show>`) останавливается вместе с ней.
+
+### `batch<T>(fn: () => T): T`
+
+Группирует записи: зависимые эффекты и слушатели выполняются один раз в конце блока.
+Вложенные `batch` схлопываются в один. Слушатели дедуплицируются по идентичности,
+эффекты — по записи.
+
+```ts
+batch(() => { a.value = 10; b.value = 20; });  // один прогон эффекта
+```
+
+### `untrack<T>(fn: () => T): T`
+
+Выполняет `fn`, не регистрируя прочитанное как зависимость текущего эффекта.
+
+```ts
+effect(() => { render(tracked.value, untrack(() => ignored.value)); });
+```
+
+---
+
+## 3. Привязка к DOM: `$()`
+
+### `$(source, path?): BoundValue<T>`
+
+Мост между состоянием и разметкой. Принимает `Signal` (`$(countSignal)`) или
+`Reactive`-значение/прокси с аксессором (`$(model.value, x => x.user.name)`).
+Результат используется как ребёнок или значение атрибута — DOM обновляется точечно.
+
+```tsx
+<p>Счёт: {$(count)}</p>
+<input value={$(model.value, x => x.name)} />
+<div style={{ color: $(model.value, x => x.color) }} />
+```
+
+- `BoundValue<T>` — объект с маркером `REACTIVE_VALUE`, геттером `value` и `subscribe`.
+  Проверка — `isBoundValue(v)`.
+- `$()` на **обычном** объекте (не `Reactive`) резолвится один раз и никогда не обновляется.
+- Нельзя интерполировать в строку: `` `всего: ${$(count)}` `` даст `[object Object]`.
+  Привязывайте ребёнка/атрибут, а не строку вокруг них.
+- Аксессор — простая чистая цепочка (см. `Reactive.watch`).
+- Внутри области владения привязка снимается вместе с узлом (`releaseBindings`).
+
+---
+
+## 4. Элементы: `h()` и JSX
+
+### `h(tag, attrs?, ...children): HTMLElementTagNameMap[tag]`
+
+Универсальная фабрика с типизацией по тегу. JSX-трансформ вызывает ту же реализацию
+(`hEl`), поэтому правила ниже одинаковы.
+
+`attrs` может быть объектом или функцией `(el) => void`:
+
+```ts
+h('input', el => el.focus());
+```
+
+**Правила атрибутов:**
+
+| Ключ | Значение | Поведение |
+| --- | --- | --- |
+| `class`, `className` | строка | `el.className = value` (синонимы; при обоих побеждает последний) |
+| `style` | строка | `setAttribute('style', value)` |
+| `style` | объект | по свойству: `el.style[prop] = value` |
+| `style` значение-число | `number` | **всегда** `px`: `{ width: 10 }` → `10px`; безразмерные (`opacity`, `zIndex`) — строкой |
+| `style` значение | `$()` | свойство становится реактивным |
+| `onClick`, `onInput`, … | функция | `addEventListener('click' / 'input' / …)`; camelCase обязателен |
+| `onDoubleClick` | функция | событие `dblclick` |
+| `onInputCapture` | функция | фаза перехвата (`{ capture: true }`) |
+| `value`, `checked`, `selected`, `disabled` | любое | присваивается **свойством**, не строкой |
+| `value` у `<select>` | любое | применяется **после** появления `<option>` |
+| `dataset` | объект | `el.dataset[k] = String(v)` |
+| `ref` | `(el) => void` | вызывается с созданным элементом (до добавления детей) |
+| `data-*`, `aria-*`, прочее | любое | `setAttribute`, если у элемента нет такого свойства |
+| любой ключ | `null`/`undefined`/`false` | `removeAttribute(key)` |
+| любой ключ | `$()` | применяется сейчас и обновляется при изменении источника |
+
+**Правила детей:** `string`/`number` → текстовый узел; `null`/`undefined`/`true`/`false`
+→ ничего; массив → рекурсивно; `Node` → как есть; `$()` → живой текстовый узел.
+
+**Чего нет:** объект-`ref` (`{ current }`), `on*Capture` без суффикса-опции,
+автоматическая нормализация `class` из массива/объекта, `dangerouslySetInnerHTML`.
+
+### `hEl(tag, attrs, children[]): HTMLElement`
+
+То же, но `children` — массив (используется JSX-рантаймом; публично полезен редко).
+
+### `parseEventProp(key): { event: string; capture: boolean }`
+
+`'onDoubleClick'` → `{ event: 'dblclick', capture: false }`,
+`'onInputCapture'` → `{ event: 'input', capture: true }`.
+
+### JSX-рантайм
+
+```ts
+createElement(tag, props, ...children): Node
+jsx / jsxs / jsxDEV(tag, props, key?): Node   // точки входа react-jsx
+Fragment({ children }): DocumentFragment
+```
+
+- Тег-функция вызывается с пропсами (включая `children`) и должна вернуть `Node`.
+- `key` не попадает в пропсы интринсик-тегов; у компонентов-функций он пробрасывается
+  в пропсы (нужно для `<For key>`).
+- Типы: `JsxChild`, `JsxNode`, `Component<P>`, `DOMAttributes`, `namespace JSX`.
+
+---
+
+## 5. Жизненный цикл и владение эффектами
+
+### `mount(target, view): { node, dispose }`
+
+```ts
+function mount(target: Element | DocumentFragment, view: Node | (() => Node)): Mounted;
+interface Mounted { readonly node: Node; readonly dispose: () => void; }
+```
+
+- Принимает **танку** (`() => <App />`) — тогда эффекты вью принадлежат области
+  монтирования и снимаются вместе с ней. Готовый узел тоже принимается, но его
+  эффекты уже созданы вне области.
+- `dispose()`: `releaseBindings` по поддереву → `dispose(scope)` → удаление узла.
+  Идемпотентна.
+
+### Области владения
+
+```ts
+interface Scope { readonly stops: Set<() => void>; disposed: boolean }
+createScope(): Scope
+dispose(scope): void                       // идемпотентна, запрещает новые регистрации
+runInScope<T>(scope, fn: () => T): T       // эффекты внутри fn принадлежат scope
+onScopeDispose(fn): void                   // очистка при dispose; вне области — no-op
+getCurrentScope(): Scope | null
+```
+
+`effect()`, вызванный внутри `runInScope`, регистрирует в области свою остановку.
+`<For>`, `<Show>` и `mount()` строят области сами.
+
+**Граница контракта:** владение появляется только там, где есть `mount()`, `<For>`
+или `<Show>`. `effect()` на верхнем уровне модуля владельца не имеет — его нужно
+останавливать вручную.
+
+### `releaseBindings(root: Node): void`
+
+Останавливает все `$()`-привязки (текст, атрибуты, style) внутри поддерева.
+Идемпотентна; эффекты не трогает — для них область.
+
+---
+
+## 6. Списки и условия
+
+### `<For each={…} key={…?}>{(item, index) => …}</For>`
+
+```ts
+interface ForProps<T> {
+  each: ReactiveSource<readonly T[]>;
+  key?: (item: T, index: number) => unknown;
+  children: (item: T, index: number) => JsxChild;
+}
+type ReactiveSource<T> = T | (() => T) | Signal<T> | BoundValue<T>;
+```
+
+Рендерит между комментариями-анкорами, без обёртки.
+
+**Без `key`** — полная перерисовка при любом изменении списка; функции элементов
+должны быть дешёвыми; эффекты и привязки предыдущего прохода освобождаются.
+
+**С `key`** — keyed-реконсиляция:
+
+- DOM-узлы переиспользуются и перемещаются (`insertBefore`), двигаются только
+  узлы не на своём месте;
+- пока ключ в списке, узлы элемента **не перерисовываются** (ключ = идентичность):
+  изменённые данные сами не появятся — привязывайте поля через `$()` или меняйте ключ
+  (рецепт с отпечатком — в [GUIDE.md](./GUIDE.md#4-список-с-keyed-режимом));
+- индекс фиксируется при первом рендере;
+- дубликаты ключей схлопываются в одну группу (побеждает первое вхождение);
+- при уходе ключа из списка эффекты группы останавливаются, привязки снимаются.
+
+### `<Show when={…} fallback={…?}>{…}</Show>`
+
+```ts
+interface ShowProps {
+  when: ReactiveSource<boolean>;
+  fallback?: JsxChild | (() => JsxChild);
+  children: JsxChild | (() => JsxChild);
+}
+```
+
+- Тоже без обёртки (комментарии-анкоры).
+- `children`/`fallback` — **танка** или готовый `JsxChild`.
+- Танка строится заново при каждом показе и снимается при скрытии: скрытая ветка
+  перестаёт реагировать на изменения модели.
+- Готовый узел перепривязать нельзя (подписки лежат в `WeakMap` по самому узлу),
+  поэтому он кешируется и живёт до сноса всего `<Show>`. Нужен настоящий снос —
+  передавайте танку.
+- Узловая ветка не перестраивается, если решение не изменилось
+  (`when={() => count > 10}` не дёргает DOM на каждую запись `count`).
+- Танка перевычисляется на каждом прогоне эффекта — она может читать реактивные
+  значения сама.
+
+### `resolveSource(src): T`
+
+Читает значение `ReactiveSource` (значение, танка, `Signal`, `$()`); внутри
+`effect()` автотрекается. Полезен при написании своих компонентов.
+
+---
+
+## 7. Ресурсы и производительность
+
+| Операция | 1 000 | 10 000 | Среда |
+| --- | --- | --- | --- |
+| Построить `Grid` (группировка + `rowKey`) | 64 мс | 1 480 мс | jsdom |
+| Вставить готовый грид | 5 мс | 44 мс | jsdom |
+| Сортировка кликом (2 клика) | 96–102 мс | 7.6–9.3 с | jsdom |
+| Обновление keyed-списка без смены порядка | — | **1.8 мс** | jsdom |
+| Поиск по `Tree` (фильтр + рендер) | 0.9 мс | 4.5 мс | jsdom |
+
+jsdom перемещает узлы примерно в 30 раз дороже браузера: абсолютные значения
+DOM-операций завышены, отношения корректны. Замеры воспроизводятся:
+`npm run build && npm run bench` (или `BENCH_SIZES=1000`).
+
+**Известные ограничения производительности:**
+
+- `Tree` перерисовывает всё дерево на каждый снапшот (не keyed) — отсюда дебаунс
+  поиска по умолчанию; 10k раскрытых узлов — это 10k DOM-узлов;
+- виртуализации нет ни в `Grid`, ни в `Tree`;
+- `Reactive` трекает чтения свойств через `Proxy` — горячие циклы лучше писать на
+  `Signal` или через `.target`.
+
+---
+
+## 8. Ограничения и отсутствующие возможности
+
+| Чего нет | Следствие / обход |
+| --- | --- |
+| SSR / гидратация | `h()` и `<For>` используют глобальный `document`; серверный рендер невозможен |
+| Портал | монтируйте в нужный узел через `mount()` |
+| Объект-`ref` | `ref={el => …}`, ссылку храните сами |
+| `class` из объекта/массива | соберите строку вручную |
+| Ленивый `computed` | пересчёт энергичный; для тяжёлого — кешируйте сами |
+| Мультиколоночная сортировка | `Grid` сортирует по одной колонке |
+| Виртуализация | окно рендера не поддерживается |
+| Error boundary | ошибки эффектов идут в `console.error`/`onError`, рендер не перехватывается |
+| Автобатчинг | синхронные записи гоняют эффекты по одной; группируйте через `batch()` |
+
+---
+
+## 9. Компоненты: `<Grid>`
+
+```ts
+function Grid<Row>(props: GridProps<Row>): HTMLElement;
+```
+
+Грид: фильтр → сортировка → группировка, состояние внутри экземпляра.
+
+```ts
+interface GridProps<Row> {
+  rows: ReactiveSource<readonly Row[]>;
+  columns: readonly Column<Row>[];
+  filter?: (row: Row, loweredQuery: string) => boolean;
+  groupBy?: (row: Row) => string | null;
+  initialSort?: { key: string; dir: 'asc' | 'desc' };
+  rowKey?: (row: Row) => unknown;
+  searchPlaceholder?: string;
+  searchDebounce?: number | false;      // по умолчанию 120 мс
+  searchDebounceMinItems?: number;      // по умолчанию 200 строк
+  empty?: string;
+  labels?: Partial<GridLabels>;
+  class?: string;                       // корень, по умолчанию 'grid'
+}
+
+interface Column<Row> {
+  key: string;                          // id колонки, запоминается сортировка
+  header: string;
+  cell: (row: Row) => JsxChild;
+  sort: (row: Row) => string | number;  // значение сортировки и текст для поиска
+  sortable?: boolean;                   // по умолчанию true
+  class?: string;                       // класс td
+  headerClass?: string;                 // класс th
+}
+
+interface GridLabels {
+  search?: string;           // aria-label поиска, 'Search'
+  searchPlaceholder?: string;// 'Search…'
+  sortDirection?: string;    // aria-label контрола, 'Sort direction'
+  descending?: string;       // '↓ desc'
+  ascending?: string;        // '↑ asc'
+  rows?: string;             // префикс счётчика, 'rows:'; '' — только число
+}
+```
+
+**Поведение:**
+
+- Поиск по умолчанию — подстрока (без учёта регистра) в `String(sort(row))` любой
+  колонки; свой матчер задаётся `filter(row, loweredQuery)` (`loweredQuery` уже в нижнем регистре).
+- Сортировка: клик по `th` → по убыванию; повторный клик по той же колонке меняет
+  направление; `sortable: false` отключает. Колонка одна.
+- Группировка: порядок групп — по первому вхождению в отсортированном списке;
+  `groupBy` → `null` даёт негруппированный бакет перед группами.
+- `rowKey` включает keyed-режим: при сортировке узлы переставляются, а не пересоздаются.
+  **Ячейки существующих строк не обновляются** — см. §11 «ключ = идентичность».
+- Счётчик показывает число строк после фильтра (свёрнутые группы всё равно считаются).
+- Дебаунс поиска включается только от `searchDebounceMinItems` строк; `searchDebounce: false`
+  отключает его целиком.
+
+**Доступность:** `th[scope=col]`, `aria-sort` у активной колонки, строка группы —
+`tabindex="0"` + `aria-expanded`, переключение по Enter/Space, `aria-label` у поиска
+и контрола направления.
+
+---
+
+## 10. Компоненты: `<Tree>`
+
+```ts
+function Tree(props: TreeProps): HTMLElement;
+
+interface TreeData {
+  label: string;
+  meta?: string;                          // вторичный текст; участвует в поиске
+  children?: readonly TreeData[] | null;  // null/нет — лист
+  labelClass?: string;
+}
+
+interface TreeProps {
+  root: ReactiveSource<TreeData | null>;
+  searchPlaceholder?: string;
+  searchDebounce?: number | false;        // 120 мс
+  searchDebounceMinItems?: number;        // 200 узлов
+  showExpandAll?: boolean;                // кнопки массового раскрытия, по умолчанию false
+  nodeKey?: (node: TreeData, path: string[]) => unknown;  // ключ раскрытия, по умолчанию путь
+  renderLabel?: (node: TreeData) => JsxChild;
+  empty?: string;
+  labels?: Partial<TreeLabels>;
+  class?: string;                         // доп. класс .tree
+}
+
+interface TreeLabels {
+  search?: string;           // 'Search'
+  searchPlaceholder?: string;// 'Search…'
+  matched?: string;          // префикс счётчика, 'matched:'; '' — скрыть
+  expandAll?: string;        // 'Expand all'
+  collapseAll?: string;      // 'Collapse all'
+}
+```
+
+**Поведение:**
+
+- Поиск: подстрока по `label` **и** `meta`; узлы с совпадающим потомком сохраняются;
+  при непустом запросе всё раскрыто, совпадения помечаются классом `match`.
+- Раскрытие хранится по ключу `nodeKey(node, path)` (по умолчанию `label/label/…`).
+- `children: []` — узел считается папкой (рисует раскрытие без детей); `null` — лист.
+- Снапшот пересобирается на каждое изменение данных/запроса/раскрытия, дерево
+  перерисовывается целиком (осознанно, см. [COMPROMISES.md](./COMPROMISES.md)).
+
+**Клавиатура:** одна остановка `Tab` (корневая строка), `ArrowDown`/`ArrowUp` —
+фокус по видимым строкам, `Enter`/`Space` — переключить, `ArrowRight`/`ArrowLeft` —
+раскрыть/свернуть. Фокус возвращается на тот же узел после перерисовки.
+
+**Доступность:** `role="tree"` + `aria-label` (метка корня), `role="treeitem"` +
+`aria-expanded`, `role="group"` у детей.
+
+---
+
+## 11. Ключ = идентичность (важнейшая ловушка)
+
+В keyed-режиме `<For>` и в `Grid` с `rowKey` узел, чей ключ остался в списке,
+**не перерисовывается**. Поэтому:
+
+```tsx
+// ❌ значение застынет на первом рендере
+{ key: 'title', header: 'Title', sort: r => r.title, cell: r => r.title }
+
+// ✅ точечная привязка: поле обновляется, узел (и фокус) живут
+{ key: 'title', header: 'Title', sort: r => r.title, cell: r => <b>{$(r, x => x.title)}</b> }
+
+// ✅ или ключ с отпечатком: узел пересоздаётся при реальном изменении
+rowKey={r => `${r.id}:${r.updated}`}
+```
+
+`$()` внутри `cell` работает, только если строка — реактивный прокси (`Reactive`);
+на обычном массиве привязка резолвится один раз.
+
+---
+
+## 12. Классы разметки компонентов
+
+- `Grid`: `grid`, `toolbar`, `search`, `dir`, `chip`, `arrow`, `group-row`, `toggle`,
+  `count`, `empty` (+ `class`/`headerClass` колонок).
+- `Tree`: `tree`, `toolbar`, `search`, `bulk`, `expand-all`, `collapse-all`, `chip`,
+  `node`, `row`, `caret`, `leaf`, `name`, `dir`, `match`, `meta`, `kids`, `empty`.
+
+Разметка, атрибуты и минимальный CSS — [TREE_GRID.md](./TREE_GRID.md).
+
+==============================================================================
+FILE: docs/GUIDE.md
+==============================================================================
+
+# bso5 — рецепты
+
+Задачи, а не API: как сделать типичную вещь и почему именно так. Каждый рецепт
+самодостаточен — можно копировать целиком. Полные сигнатуры — в [API.md](./API.md).
+
+- [1. Счётчик и поле ввода](#1-счётчик-и-поле-ввода)
+- [2. Список: без ключа и с ключом](#2-список-без-ключа-и-с-ключом)
+- [3. Условия и вкладки](#3-условия-и-вкладки)
+- [4. Список с keyed-режимом: живые данные](#4-список-с-keyed-режимом)
+- [5. Загрузка данных](#5-загрузка-данных)
+- [6. Производные значения](#6-производные-значения)
+- [7. Своя вью с жизненным циклом](#7-своя-вью-с-жизненным-циклом)
+- [8. Грид](#8-грид)
+- [9. Дерево](#9-дерево)
+- [10. Ошибки в эффектах](#10-ошибки-в-эффектах)
+- [11. Без сборщика](#11-без-сборщика)
+- [12. Грабли](#12-грабли)
+
+---
+
+## 1. Счётчик и поле ввода
+
+```tsx
+import { mount, signal, $ } from 'bso5';
+
+const count = signal(0);
+
+mount(document.body, () => (
+  <main>
+    <button onClick={() => count.update(n => n - 1)}>−</button>
+    <output>{$(count)}</output>
+    <button onClick={() => count.update(n => n + 1)}>+</button>
+  </main>
+));
+```
+
+Поле ввода — состояние живёт в сигнале, значение приходит в DOM через `value`:
+
+```tsx
+const name = signal('');
+
+const field = (
+  <input
+    value={$(name)}
+    onInput={e => { name.value = (e.target as HTMLInputElement).value; }}
+  />
+);
+```
+
+Почему так: `$()` обновляет **свойство** `value`, не атрибут, поэтому каретка не
+сбивается, пока пользователь печатает сам. `count.update(fn)` читает текущее
+значение без трекинга — безопасно внутри обработчика.
+
+## 2. Список: без ключа и с ключом
+
+**Без `key`** — просто и предсказуемо, весь список перерисовывается:
+
+```tsx
+const history = signal<string[]>([]);
+
+<ul>
+  <For each={$(history)}>{item => <li>{item}</li>}</For>
+</ul>
+```
+
+**С `key`** — узлы переиспользуются и перемещаются (сохраняются фокус, каретка,
+CSS-transition'ы):
+
+```tsx
+<For each={() => model.value.rows} key={row => row.id}>
+  {row => <li>#{row.id} <input value={$(row, x => x.name)} /></li>}
+</For>
+```
+
+Выбор: если элементы содержат ввод, медиа или анимацию — `key`; если это
+одноразовый список из строк — можно без него.
+
+## 3. Условия и вкладки
+
+```tsx
+const tab = signal<'list' | 'stats'>('list');
+
+<nav>
+  <button onClick={() => { tab.value = 'list'; }}>Список</button>
+  <button onClick={() => { tab.value = 'stats'; }}>Статистика</button>
+</nav>
+
+<Show when={() => tab.value === 'list'} fallback={() => <Stats />}>
+  {() => <List />}
+</Show>
+```
+
+Обе ветки — **танки**: при переключении старая снимается целиком (её эффекты и
+привязки освобождаются). Если передать готовый узел (`fallback={<Stats />}`), он
+будет кеширован и продолжит жить при скрытии — иногда это плюс, но подписки
+остаются активными.
+
+## 4. Список с keyed-режимом
+
+Ключ — идентичность. Пока ключ в списке, узел **не перерисовывается**. Значит,
+изменённые данные сами не появятся. Три рабочих варианта:
+
+```tsx
+// а) поле обновляется точечно; строка должна быть реактивным прокси
+{cell: row => <b>{$(row, x => x.title)}</b>}
+
+// б) ключ с отпечатком: узел пересоздаётся при реальном изменении
+<For each={() => model.value.rows} key={row => `${row.id}:${row.updated}`}>…</For>
+
+// в) отказаться от keyed-режима и мириться с полной перерисовкой
+<For each={() => model.value.rows}>…</For>
+```
+
+Порядок предпочтения: (а) — дешевле и сохраняет фокус; (б) — проще, но теряет
+состояние узла; (в) — только для мелких списков.
+
+Для `Grid` то же самое: `rowKey` включает keyed-режим, `cell` с `$()` делает
+ячейки живыми.
+
+## 5. Загрузка данных
+
+Рецепт: одно поле-сигнал на каждое состояние, ошибки — в отдельный сигнал,
+`finally` снимает загрузку. Никаких «магических» состояний.
+
+```ts
+import { signal } from 'bso5';
+
+interface Issue { id: number; title: string }
+
+const issues = signal<Issue[]>([]);
+const loading = signal(false);
+const error = signal<string | null>(null);
+
+async function load(): Promise<void> {
+  loading.value = true;
+  error.value = null;
+  try {
+    const res = await fetch('/api/issues');
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    issues.value = await res.json() as Issue[];
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+```
+
+```tsx
+<Show when={() => loading.value} fallback={() => (
+  <Show when={() => error.value !== null} fallback={() => <List rows={issues} />}>
+    {() => <p class="error">{$(error)}</p>}
+  </Show>
+)}>
+  {() => <p>Загрузка…</p>}
+</Show>
+```
+
+Форма вложенных `<Show>` выглядит громоздко, зато читается сверху вниз и не требует
+новых абстракций: «загружается → ошибка → данные».
+
+## 6. Производные значения
+
+```ts
+import { computed, signal } from 'bso5';
+
+const items = signal<number[]>([]);
+const total = computed(() => items.value.reduce((s, n) => s + n, 0));
+const isEmpty = computed(() => items.value.length === 0);
+```
+
+`computed` — обычный `Signal`: его можно положить в `$()`, в `each`, в `<Show when>`,
+прочитать в `effect()`. Если результат не изменился, подписчики не перезапускаются
+(сравнение через `Object.is`) — поэтому `isEmpty` не дёргает DOM на каждое добавление.
+
+## 7. Своя вью с жизненным циклом
+
+```tsx
+import { effect, mount, onScopeDispose, signal, $ } from 'bso5';
+
+const target = document.getElementById('app')!;
+
+const app = mount(target, () => {
+  const seconds = signal(0);
+  const timer = setInterval(() => seconds.update(n => n + 1), 1000);
+
+  // эффект принадлежит области mount(): остановится вместе с вью
+  effect(() => console.log('тик', seconds.value));
+
+  // своя очистка — тоже через область
+  onScopeDispose(() => clearInterval(timer));
+
+  return <p>{$(seconds)}</p>;
+});
+
+app.dispose(); // таймер снят, эффект остановлен, узел удалён
+```
+
+Почему танка: всё, что создано **внутри** `() => …`, получает владельца. Узел,
+построенный до `mount()`, уже создал эффекты вне области, и снять их нечем.
+
+## 8. Грид
+
+```tsx
+import { Reactive, signal } from 'bso5';
+import { Grid } from 'bso5-components';
+import type { Column } from 'bso5-components';
+
+interface Issue { id: number; title: string; project: string; severity: string }
+
+const model = new Reactive<{ issues: Issue[] }>({ issues: [] });
+const query = signal('');
+
+const COLS: Column<Issue>[] = [
+  { key: 'id', header: 'ID', sort: i => i.id, cell: i => i.id },
+  // ячейка живая: строка — прокси Reactive, поэтому $() обновляется точечно
+  { key: 'title', header: 'Задача', sort: i => i.title, cell: i => <b>{$(i, x => x.title)}</b> },
+  { key: 'severity', header: 'Важность', sort: i => i.severity, cell: i => i.severity },
+];
+
+<Grid
+  rows={() => model.value.issues}
+  columns={COLS}
+  groupBy={i => i.project}
+  rowKey={i => i.id}
+  searchPlaceholder="Поиск по задачам"
+  labels={{ rows: 'строк:', descending: 'убыв', ascending: 'возр' }}
+  empty="Ничего не найдено"
+/>
+```
+
+- `rows` — танка, чтобы замена массива целиком подхватывалась.
+- `rowKey` + `$()` в `cell` — данные обновляются, фокус и выделение сохраняются.
+- `filter` нужен, когда стандартный поиск по `sort(row)` не подходит:
+  `filter={(row, q) => row.title.toLowerCase().includes(q) || row.assignee.toLowerCase().includes(q)}`.
+- `initialSort={{ key: 'id', dir: 'desc' }}` отражается и в списке, и в контроле направления.
+
+## 9. Дерево
+
+Плоский список → дерево → компонент:
+
+```tsx
+import { computed, signal } from 'bso5';
+import { Tree } from 'bso5-components';
+import type { TreeData } from 'bso5-components';
+
+interface FileNode { path: string; name: string; size?: number; children?: FileNode[] }
+
+const files = signal<FileNode[]>([]);
+
+const toTreeData = (nodes: FileNode[]): TreeData[] =>
+  nodes
+    .slice()
+    .sort((a, b) => Number(!!b.children) - Number(!!a.children) || a.name.localeCompare(b.name))
+    .map(n => ({
+      label: n.name,
+      meta: n.size === undefined ? undefined : `${n.size} B`,
+      children: n.children?.length ? toTreeData(n.children) : null,
+    }));
+
+const root = computed<TreeData | null>(() =>
+  files.value.length ? { label: 'root', children: toTreeData(files.value) } : null);
+
+<Tree
+  root={root}
+  nodeKey={node => node.label}          // ключ раскрытия: по метке, а не по пути
+  showExpandAll
+  labels={{ matched: 'найдено:', expandAll: 'Развернуть', collapseAll: 'Свернуть' }}
+  searchPlaceholder="Фильтр по имени или размеру"
+/>
+```
+
+- Сортировка и построение — до компонента: он рисует то, что дали.
+- `meta` участвует в поиске: складывайте туда то, что должно находиться.
+- `nodeKey` обязателен, если метки могут повторяться или переставляться.
+
+## 10. Ошибки в эффектах
+
+```ts
+import { effect, setEffectErrorHandler } from 'bso5';
+
+// локально
+effect(() => riskyRendering(), { onError: err => toast(String(err)) });
+
+// глобально (например, в дев-режиме — в консоль с контекстом)
+setEffectErrorHandler(err => console.error('[bso5]', err));
+```
+
+Исключение в эффекте не пробрасывается в код, записавший сигнал: одна сломанная вью
+не должна ронять модель. В тестах обработчик удобен, чтобы падать по факту ошибки:
+
+```ts
+setEffectErrorHandler(err => { throw err; });  // в тесте — «падение» на месте
+```
+
+## 11. Без сборщика
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+<script type="importmap">
+{ "imports": {
+    "bso5": "./packages/bso5/dist/index.js",
+    "bso5/jsx-runtime": "./packages/bso5/dist/jsx-runtime.js",
+    "bso5-components": "./packages/bso5-components/dist/index.js"
+} }
+</script>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+  import { h, mount, signal, $ } from 'bso5';
+
+  const count = signal(0);
+  mount(document.getElementById('app'), () =>
+    h('div', null,
+      h('button', { onClick: () => { count.update(n => n - 1); } }, '−'),
+      h('span', null, $(count)),
+      h('button', { onClick: () => { count.update(n => n + 1); } }, '+'),
+    ));
+</script>
+</body>
+</html>
+```
+
+`npm run build` собирает `dist`; дальше достаточно статического сервера
+(`py -3 -m http.server 8080`). По `file://` Chrome блокирует ES-модули — это
+ограничение браузера, а не библиотеки. Живой пример: [`examples/importmap`](../examples/importmap/index.html).
+
+## 12. Грабли
+
+| Симптом | Причина | Что делать |
+| --- | --- | --- |
+| В тексте `[object Object]` | `$()` вставлен в шаблонную строку | привязывайте ребёнка/атрибут, а не строку |
+| Данные в строке не обновляются | keyed-режим: ключ = идентичность | `$()` в ячейке или ключ с отпечатком (§4) |
+| `watch()` бросил «requires a plain property path» | в аксессоре выражение или вызов метода | только цепочка свойств: `x => x.a.b`, `x => x.rows[0].c` |
+| `TypeError: Method Map.prototype.set called on incompatible receiver` | `Map`/`Set` внутри `Reactive` не проксируются, а метод вызывается через прокси | такого не случится с 0.4.0; если видите — объект обёрнут вручную |
+| Привязка «замерла» на первом значении | `$()` от обычного объекта (не `Reactive`) | оберните модель в `Reactive` или используйте `Signal` |
+| Эффект не срабатывает после удаления строки | узел снят, эффект остановлен областью | это ожидаемо: создавайте эффект внутри живого рендера |
+| Обработчик `onDoubleClick` молчит | старое ядро (до 0.4.0) отправляло `doubleclick` | обновите bso5 |
+| В `<select>` не выставляется `value` | значение применено до появления `<option>` | в 0.4.0 учтено; при ручной сборке ставьте `value` после детей |
+| Утечка памяти на больших списках | не остановленные эффекты вне области | создавайте эффекты внутри `mount()`/`<For>`/`<Show>` |
+| Скрытая вкладка продолжает реагировать | ветка `<Show>` передана готовым узлом | передавайте танку: `{() => <Tab />}` |
+
+==============================================================================
+FILE: docs/TREE_GRID.md
+==============================================================================
+
+# `<Grid>` и `<Tree>`: разметка, классы, CSS
+
+Компоненты **headless**: они дают семантический DOM и стабильные имена классов, а
+внешний вид целиком ваш. Здесь — полная карта того, что они рендерят, минимальный
+рабочий CSS и рецепты адаптации данных.
+
+## `<Grid>`
+
+### Разметка
+
+```html
+<div class="grid">
+  <div class="toolbar">
+    <input class="search" type="text" aria-label="Search" placeholder="Search…">
+    <select class="dir" aria-label="Sort direction">
+      <option value="desc">↓ desc</option>
+      <option value="asc">↑ asc</option>
+    </select>
+    <span class="chip">rows: <b>42</b></span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th scope="col" aria-sort="descending">ID<span class="arrow">↓</span></th>
+        <th scope="col">Title</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- группа: <tr> фокусируется, Enter/Space переключает -->
+      <tr class="group-row" data-group="Web App" tabindex="0" aria-expanded="true">
+        <td colspan="2">
+          <span class="toggle">▾</span>Web App<span class="count">(2)</span>
+        </td>
+      </tr>
+      <tr><td>4101</td><td>Login fails on Safari 17</td></tr>
+      <tr><td>4102</td><td>Flaky e2e: checkout flow</td></tr>
+    </tbody>
+  </table>
+  <div class="empty">No rows match the current filter.</div>
+</div>
+```
+
+### Классы
+
+| Класс | Где | Что это |
+| --- | --- | --- |
+| `grid` | корень | задаётся пропом `class` (по умолчанию `grid`) |
+| `toolbar` | панель | строка поиска + контрол направления + счётчик |
+| `search` | `input` | поиск; `aria-label` = `searchPlaceholder` |
+| `dir` | `select` | направление сортировки, реактивно в обе стороны |
+| `chip` | `span` | счётчик строк |
+| `arrow` | `span` в `th` | стрелка направления у активной колонки |
+| `group-row` | `tr` | строка группы: `data-group`, `tabindex`, `aria-expanded` |
+| `toggle` | `span` в группе | `▾` развёрнуто / `▸` свёрнуто |
+| `count` | `span` в группе | число строк в группе |
+| `empty` | `div` | пустое состояние |
+
+Колонки получают свои классы через `class` (у `td`) и `headerClass` (у `th`).
+
+### Минимальный CSS
+
+```css
+.grid { font: 14px/1.45 system-ui, sans-serif; }
+.grid .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.grid .search { flex: 1; padding: 4px 8px; }
+.grid .chip { color: #888; font-size: 12px; white-space: nowrap; }
+
+.grid table { border-collapse: collapse; width: 100%; }
+.grid th, .grid td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e6e6e6; }
+.grid th { cursor: pointer; user-select: none; background: #fafafa; white-space: nowrap; }
+.grid th[aria-sort] { background: #eef2fb; }
+.grid .arrow { margin-left: 4px; color: #456; }
+
+.grid tr.group-row { background: #f4f6fa; font-weight: 600; cursor: pointer; }
+.grid tr.group-row:focus-visible { outline: 2px solid #6ea8fe; outline-offset: -2px; }
+.grid tr.group-row .toggle { display: inline-block; width: 1.2em; color: #666; }
+.grid tr.group-row .count { color: #888; font-weight: 400; margin-left: 6px; }
+
+.grid .empty { color: #888; font-style: italic; padding: 8px 0; }
+```
+
+## `<Tree>`
+
+### Разметка
+
+```html
+<div>
+  <div class="toolbar">
+    <input class="search" type="text" aria-label="Search" placeholder="Search…">
+    <!-- только при showExpandAll -->
+    <span class="bulk">
+      <button type="button" class="expand-all">Expand all</button>
+      <button type="button" class="collapse-all">Collapse all</button>
+    </span>
+    <span class="chip">matched: <b>7</b></span>
+  </div>
+  <div class="tree " role="tree" aria-label="bso5">
+    <div class="node" role="treeitem" aria-expanded="true">
+      <div class="row" data-key="root" tabindex="0">
+        <span class="caret ">▾</span>
+        <span class="name dir ">bso5</span>
+        <span class="meta">7 items</span>
+      </div>
+      <div class="kids" role="group">
+        <div class="node" role="treeitem">
+          <div class="row" data-key="root/index.ts" tabindex="-1">
+            <span class="caret leaf">·</span>
+            <span class="name  match">index.ts</span>
+            <span class="meta">412 B</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+`data-key` — ключ раскрытия (для `nodeKey` берётся из него), по нему же
+восстанавливается фокус после перерисовки. `tabindex="0"` только у корневой
+строки: Tab входит в дерево один раз, дальше — стрелки.
+
+### Классы
+
+| Класс | Где | Что это |
+| --- | --- | --- |
+| `toolbar`, `search`, `chip` | панель | как в `Grid` |
+| `bulk` | `span` в панели | контейнер кнопок «развернуть/свернуть всё» |
+| `expand-all` / `collapse-all` | `button` | массовое раскрытие, при `showExpandAll` |
+| `tree` | корень дерева | `role="tree"`; доп. класс через проп `class` |
+| `node` | узел | `role="treeitem"`, `aria-expanded` у папок |
+| `row` | строка узла | `data-key` — ключ узла; `tabindex="0"` только у корня, остальные `-1` |
+| `caret` | маркер | `▾` открыто / `▸` закрыто / `·` лист (`leaf`) |
+| `name` | метка | `dir` у папок, `match` у совпадений с запросом |
+| `meta` | вторичный текст | размеры, счётчики |
+| `kids` | дети | `role="group"`, отступ задаётся CSS |
+| `empty` | заглушка | когда дерева нет или фильтр всё отсёк |
+
+### Минимальный CSS
+
+```css
+.tree { font: 14px/1.5 system-ui, sans-serif; }
+.tree .node { display: block; }
+.tree .row { display: flex; gap: 6px; align-items: center; padding: 1px 4px; cursor: pointer; border-radius: 4px; }
+.tree .row:hover { background: #f2f5fa; }
+.tree .row:focus-visible { outline: 2px solid #6ea8fe; outline-offset: -2px; }
+.tree .caret { width: 1ch; color: #888; flex: none; }
+.tree .name.dir { font-weight: 600; }
+.tree .name.match { background: #fff3c4; border-radius: 3px; }
+.tree .meta { color: #888; font-size: 12px; margin-left: auto; }
+.tree .kids { padding-left: 16px; }
+```
+
+Отступ делается только на `.kids`: узлы не дублируют отступ, поэтому глубокая
+ветка стоит ровно `16px × уровень`.
+
+## Как адаптировать свои данные
+
+Компоненты не знают, откуда данные: они принимают `ReactiveSource` (массив,
+танку, `Signal`, `$()`). Трансформация — на стороне владельца данных.
+
+```tsx
+import { effect, signal } from 'bso5';
+import type { TreeData } from 'bso5-components';
+
+interface FileNode { name: string; size?: number; children?: FileNode[] }
+
+// 1) плоское или чужое дерево → TreeData
+const toTree = (nodes: FileNode[]): TreeData[] => nodes
+  .slice()
+  .sort((a, b) => Number(!!b.children) - Number(!!a.children) || a.name.localeCompare(b.name))
+  .map(n => ({
+    label: n.name,
+    meta: n.size === undefined ? undefined : `${n.size} B`,
+    children: n.children ? toTree(n.children) : null,
+  }));
+
+// 2) сортировка/фильтрация источника — тоже ваша: компонент рисует то, что дали
+const files = signal<FileNode[]>([]);
+const view = signal<TreeData | null>(null);
+effect(() => {
+  view.value = files.value.length ? { label: 'root', children: toTree(files.value) } : null;
+});
+
+<Tree root={view} />;
+```
+
+Правила, которые экономят время:
+
+1. **Дерево — данные, а не компонент.** Сортировка, свёртка из плоского списка,
+   асинхронная загрузка — всё до входа в `Tree`.
+2. **`children: null` означает лист**, `undefined` — то же самое; пустой массив
+   листом не считается и рисует раскрывающийся узел без детей.
+3. **Ключ раскрытия** по умолчанию — путь из меток. Если метки повторяются или
+   меняются местами, задайте `nodeKey` (например, по `id`).
+4. **`rowKey` в `Grid` не должен включать индекс**: индекс меняется при
+   сортировке, и keyed-режим превращается в полную пересборку.
+5. **Поиск смотрит в `label` и `meta`**, а не в ваши исходные поля — кладите
+   искомое в `meta`, иначе поиск его не увидит.
+
+==============================================================================
+FILE: packages/bso5/README.md
+==============================================================================
+
+# bso5
+
+> Реактивный DOM без лишнего веса — крошечная библиотека TypeScript с состоянием Signal/Reactive и первоклассной поддержкой JSX. Без фреймворка.
+
+**~4.2 kB min+gzip** · ноль зависимостей · строгий TypeScript · 161 тест
+
+[English version](./README.en.md)
+
+```tsx
+import { Reactive, $, For } from 'bso5';
+
+const state = new Reactive({ user: { name: 'ann' }, items: ['a', 'b'] });
+
+function App() {
+  return (
+    <main>
+      <h1>Привет, {$(state.value, x => x.user.name)}!</h1>
+      <ul>
+        <For each={() => state.value.items}>
+          {(item, i) => <li>{i + 1}: {item}</li>}
+        </For>
+      </ul>
+    </main>
+  );
+}
+
+document.getElementById('app')!.appendChild(<App />);
+```
+
+Без JSX? Используйте фабрику `h()` напрямую — всё остальное работает идентично.
+
+## Основные концепции
+
+| Экспорт | Назначение |
+| --- | --- |
+| `Signal<T>` / `signal(v)` | Атомарное реактивное значение: чтение/запись `.value`, `.peek()`, `.update()`, `.subscribe()` |
+| `Reactive<T>` | Глубокий реактивный прокси над обычным объектом с подписками на пути свойств |
+| `effect(fn)` | Автотрекаемое вычисление: перезапускается при изменении любого прочитанного значения; второй аргумент `{ onError }` перехватывает исключения |
+| `computed(fn)` | Производное значение: пересчитывается от зависимостей и уведомляет только при реальном изменении |
+| `watch(src, path, cb)` | Ручная подписка на `Signal` или путь свойства `Reactive` |
+| `$(src, path?)` | Создаёт **привязанное значение** для детей и атрибутов JSX |
+| `<For each={…}>` | Реактивный рендер списка; необязательный `key` включает переиспользование DOM-узлов |
+| `<Show when={…}>` | Реактивный условный рендер с необязательным `fallback` |
+| `h(tag, attrs, ...kids)` | Универсальная фабрика элементов (сильно типизирована по HTML-тегам) — см. [справочник атрибутов](#h-справочник-атрибутов) |
+| `mount(target, view)` | Монтирует вью и возвращает `{ node, dispose }` для полного сноса |
+| `batch(fn)` / `untrack(fn)` | Один прогон эффектов на группу записей / чтение без трекинга |
+| `createScope()` / `dispose(scope)` / `runInScope()` / `onScopeDispose()` | Владение эффектами: снос поддерева одной командой |
+| `releaseBindings(root)` | Останавливает реактивные DOM-привязки отсоединённого поддерева |
+| `Fragment` | JSX-фрагмент; `bso5/jsx-runtime` — точки входа для automatic JSX |
+
+### Signal
+
+```ts
+import { signal, effect } from 'bso5';
+
+const name = signal('ann');
+
+effect(() => {
+  console.log(name.value); // 'ann', затем 'bob'
+});
+
+name.value = 'bob';   // уведомляет подписчиков и эффекты
+name.peek();          // 'bob' — чтение без трекинга
+name.update(v => v + '!');  // обновление от текущего значения (нетрекируемое чтение)
+```
+
+### Reactive
+
+```ts
+import { Reactive, watch } from 'bso5';
+
+const state = new Reactive({
+  user: { name: 'ann', address: { city: 'Rome' } },
+  tags: ['a', 'b'],
+});
+
+// Следить за вложенным путём — аксессором или строкой 'user.address.city'.
+watch(state.value, x => x.user.address.city, () => { /* … */ });
+// Индексная нотация тоже работает: 'rows.1.done' аксессором или строкой.
+watch(state.value, x => x.rows[1].done, () => { /* … */ });
+
+state.value.user.address.city = 'Milan';  // запускает вотчер
+state.value.user = { name: 'bob', ... };  // вложенные пути перепривязываются автоматически
+state.value.tags.push('c');               // массивы поддерживаются (length трекается)
+```
+
+`.value` возвращает реактивное дерево прокси; `.target` открывает сырой объект
+(чтения/записи там нетрекируемые). `dispose()` останавливает все подписки и
+трекинг эффектов — привязки затихают, а чтения/записи через прокси продолжают
+работать как обычный сквозной проход.
+
+Встроенные объекты с внутренними слотами проходят **насквозь**, без прокси:
+`Map`, `Set`, `WeakMap`, `WeakSet`, `Promise`, `Date`, `RegExp`, `Error`,
+`ArrayBuffer`/`TypedArray`, `Blob`/`File`, `AbortController`, `FormData`, `URL`,
+а также DOM-узлы. Оборачивать их нельзя: метод, вызванный через прокси, получает
+прокси как `receiver` и бросает `TypeError: Method Map.prototype.set called on
+incompatible receiver`. Поэтому `model.value.cache.set(k, v)` работает, но
+**не** уведомляет подписчиков — если нужна реактивность, меняйте значение целиком
+(`model.value.cache = new Map(...)`).
+
+### Привязанные значения: `$()`
+
+`$()` — мост между состоянием и разметкой. Используйте его как **ребёнка JSX**
+или **значение атрибута**, и он держит DOM в актуальном состоянии:
+
+```tsx
+<p>Счёт: {$(state.value, x => x.count)}</p>
+<input value={$(state.value, x => x.name)} disabled={$(state.value, x => x.busy)} />
+<div style={{ color: $(state.value, x => x.color) }}>цветной</div>
+```
+
+- `$()` принимает `Signal` (`$(countSignal)`) или прокси `Reactive` + аксессор пути.
+- Аксессор пути должен быть **простой чистой цепочкой свойств** (`x => x.user.name`;
+  `x => x.items[0].title` — индексная нотация поддерживается). Он *выполняется*
+  один раз на подписку для трассировки пути, поэтому не должен иметь побочных
+  эффектов. Вычисляемые выражения (`x => x.count + 1`) и вызовы методов
+  отвергаются. Оборачивайте их в `effect()`.
+- Привязанные значения нельзя интерполировать в шаблонные строки —
+  `label={`+${$(...)}`}` отрендерит `[object Object]`. Привязывайте сам
+  атрибут/ребёнка, а не строку вокруг него.
+
+### Списки и условия: `<For>` и `<Show>`
+
+JSX-выражения вычисляются **один раз** при монтировании. Для реактивных списков
+и условий используйте `<For>` / `<Show>` — они рендерят между невидимыми
+комментариями-анкорами (без обёрток, без ре-рендера родителя):
+
+```tsx
+import { For, Show } from 'bso5';
+
+<ul class="history">
+  <For each={() => state.value.history}>
+    {(value, i) => <li>шаг {i + 1}: {value}</li>}
+  </For>
+</ul>
+
+<Show when={() => state.value.count > 10}>
+  <p class="alert">Слишком много!</p>
+</Show>
+```
+
+`each` / `when` принимают обычное значение, танк `() => value` (перечитывается
+и автотрекается), `Signal` или привязанное значение `$()`. По умолчанию `<For>`
+перерисовывает весь список при изменении — держите функции элементов дешёвыми;
+для тонких привязок используйте `$()` внутри них.
+
+Передайте `key`, чтобы включить **keyed-реконсиляцию**: существующие DOM-узлы
+переиспользуются и перемещаются (`insertBefore`) вместо пересоздания, сохраняя
+фокус, каретку, выделение текста, состояние медиа и CSS-transition'ы при
+пересортировках. Семантика обычная React/Solid:
+
+- ключ идентифицирует элемент — **пока ключ в списке, узлы элемента не
+  перерисовываются**: привязывайте поля элемента через `$()` внутри
+  render-функции, а не свежими данными элемента;
+- отрисованный `index` фиксируется при первом рендере и не обновляется при
+  пересортировке — привязывайте его через `$()`, если нужен живой индекс;
+- ключи должны быть уникальными: дубликаты схлопываются в одну группу узлов.
+
+```tsx
+<For each={() => state.value.rows} key={(row: Row) => row.id}>
+  {(row) => <li>#{row.id} <input value={$(row, x => x.name)} /></li>}
+</For>
+```
+### `h()`: справочник атрибутов
+
+`h(tag, attrs, ...children)` и JSX идут через одну реализацию, поэтому таблица
+верна для обоих. `attrs` можно передать и функцией — `h('input', el => el.focus())`.
+
+| Ключ | Форма значения | Что происходит |
+| --- | --- | --- |
+| `class` / `className` | строка | `el.className = value` (оба синонима, вместе — побеждает последний) |
+| `style` | строка или объект | строка → `setAttribute('style', …)`; объект → `el.style[prop] = value` по одному свойству |
+| `style` в объекте | число | **всегда** добавляется `px`: `{ width: 10 }` → `10px`; безразмерные свойства (`opacity`, `zIndex`, `flexGrow`) задавайте строкой |
+| `style` в объекте | `$()` | свойство становится реактивным |
+| `onClick`, `onInput`, … | функция | `addEventListener('click' / 'input' / …)`; **camelCase обязателен**, `onDoubleClick` → событие `dblclick`; суффикс `Capture` ставит обработчик в фазу перехвата (`onInputCapture`) |
+| `value`, `checked`, `selected`, `disabled` | любое | присваивается **свойством**, не строкой; у `<select>` `value` применяется после появления `<option>` |
+| `dataset` | объект | `el.dataset[key] = String(value)` |
+| `data-*`, `aria-*`, прочее | любое | `setAttribute`, если такого свойства нет у элемента; иначе — присваивание свойству |
+| любой ключ | `null` / `undefined` / `false` | `removeAttribute(key)` — атрибут не ставится |
+| любой ключ | `$()` | значение применяется сейчас и обновляется при изменении источника |
+| `ref` | `el => void` | вызывается с созданным элементом сразу после его создания (до детей); объект-`ref` не поддерживается |
+
+Дети обрабатываются так: строка и число → текстовый узел; `null`/`undefined`/
+`true`/`false` → ничего; массив → рекурсивно; `Node` → как есть; `$()` → живой
+текстовый узел, который обновляется при изменении источника.
+
+```ts
+import { h, $, effect } from 'bso5';
+
+const input = h('input', {
+  type: 'text',
+  class: 'field',
+  style: { width: 200, color: 'tomato' },   // 200 → 200px
+  disabled: false,                          // атрибут не ставится
+  dataset: { role: 'query' },               // data-role="query"
+  'aria-label': 'Поиск',
+  onInput: e => console.log((e.target as HTMLInputElement).value),
+});
+```
+
+### Производные значения: `computed()`
+
+`computed(fn)` возвращает `Signal`, который пересчитывается при изменении
+зависимостей и уведомляет читателей только если результат реально изменился.
+Пересчёт энергичный (на изменение, не на чтение) — ленивого кеша нет, зато
+порядок вычислений очевиден.
+
+```ts
+import { computed, effect, signal } from 'bso5';
+
+const count = signal(2);
+const parity = computed(() => count.value % 2);   // 0
+effect(() => console.log(parity.value));          // один прогон
+
+count.value = 4;   // parity по-прежнему 0 → эффект НЕ перезапускается
+count.value = 5;   // parity стал 1   → эффект перезапускается
+```
+
+Подходит везде, где ждут сигнал: `$()`, `each`, `<Show when>`, чтение внутри
+`effect()`. Внутри области (`mount()`, `<For>`, `<Show>`) перестаёт считать
+вместе с ней.
+
+### Жизненный цикл: `mount()`, scope, `batch()`
+
+`<For>` и `<Show>` владеют эффектами своего поддерева сами: при перерисовке
+списка, смене ветки и удалении ключа их эффекты останавливаются, а DOM-привязки
+освобождаются. Исключение — готовая (не-функциональная) ветка `<Show>`: узел
+нельзя перепривязать после снятия, поэтому он кешируется и живёт до сноса всего
+`<Show>`; если ветка должна действительно сниматься, передавайте **танку**
+(`{() => <Tab />}`). Для вью целиком есть `mount()`:
+
+```tsx
+import { mount } from 'bso5';
+
+const app = mount(document.body, () => <App />); // передавайте танку
+app.dispose(); // привязки сняты, эффекты остановлены, узел удалён
+```
+
+Передавайте **танку** (`() => <App />`), а не готовый узел: вью, построенный до
+вызова, уже создал эффекты вне области, и снять их потом нечем.
+
+Свои компоненты строятся на тех же примитивах:
+
+```ts
+import { createScope, runInScope, dispose, onScopeDispose } from 'bso5';
+
+const scope = createScope();
+runInScope(scope, () => { /* эффекты внутри принадлежат scope */ });
+onScopeDispose(() => { /* очистка при dispose(scope) */ });
+dispose(scope); // всё созданное внутри остановлено
+```
+
+`batch(fn)` откладывает прогон эффектов и слушателей до конца блока: две записи
+дают один прогон. `untrack(fn)` читает значения, не создавая зависимость.
+
+```ts
+import { signal, effect, batch, untrack } from 'bso5';
+
+const a = signal(1);
+const b = signal(2);
+effect(() => { console.log(a.value, untrack(() => b.value)); });
+batch(() => { a.value = 10; b.value = 20; }); // один прогон эффекта
+```
+
+### `effect()` для полного контроля
+
+Когда нужно то, чего декларативные компоненты не покрывают — canvas, сторонние
+виджеты, ручной DOM — используйте `effect()`. Он трекает каждый `Signal` и
+каждое свойство `Reactive`, прочитанное внутри.
+
+Ошибки: исключение внутри эффекта не пробрасывается в код, записавший сигнал
+(иначе одна сломанная вью роняла бы модель). По умолчанию оно уходит в
+`console.error`, но это можно перехватить — на один эффект или глобально:
+
+```ts
+import { effect, setEffectErrorHandler } from 'bso5';
+
+effect(() => risky(), { onError: err => report(err) }); // только этот эффект
+setEffectErrorHandler(err => report(err));              // все эффекты
+setEffectErrorHandler(null);                            // назад в console.error
+```
+
+
+```tsx
+import { effect, h } from 'bso5';
+
+const list = h('ul', { class: 'history' });
+effect(() => {
+  // перезапускается на любое изменение прочитанного
+  list.replaceChildren();
+  for (const item of state.value.history) list.append(h('li', {}, `${item}`));
+});
+```
+
+### Установка / сборка / тесты
+
+```bash
+npm install bso5
+```
+
+Только исходники и тесты (нужен Node ≥ 22.12 — требование vitest 5):
+
+```bash
+npm ci              # ставит строго по package-lock
+npm run typecheck   # tsc, строгий режим
+npm test            # vitest (jsdom), 161 тест
+npm run build       # tsc -> dist/
+npm run bench       # замеры из таблицы ниже (после build)
+```
+
+### Производительность
+
+Числа получены `npm run bench` (Node 26, jsdom 29.1.1 — это Node и jsdom, не браузер:
+перемещение узлов в jsdom примерно в 30 раз дороже, чем в Chromium, поэтому
+абсолютные значения DOM-операций здесь завышены, а относительные сравнения
+корректны).
+
+| Сценарий | 1 000 | 10 000 |
+| --- | --- | --- |
+| Построить `Grid` с группировкой и `rowKey` | 64 мс | 1 480 мс |
+| Вставить готовый грид в документ | 5 мс | 44 мс |
+| Сортировка по клику (2 клика: desc + asc) | 96–102 мс | 7.6–9.3 с (jsdom) |
+| Обновление keyed-списка без смены порядка | — | **1.8 мс** (было 2 348 мс) |
+| Поиск по `Tree` (фильтр + рендер совпадений) | 0.9 мс | 4.5 мс |
+
+Сравнение с другими библиотеками сюда сознательно не входит: замеры нужно делать
+одним скриптом на одной машине, иначе числа несопоставимы.
+
+## Лицензия
+
+MIT
+
+
+`<Show>` с ребёнком-функцией перевычисляет его при каждом показе блока, а
+необязательный `fallback` (тех же форм) рендерится, пока условие ложно:
+
+```tsx
+<Show when={() => state.value.items.length > 0} fallback={<p>Пока ничего нет.</p>}>
+  <ul>{/* … */}</ul>
+</Show>
+```
+
+==============================================================================
+FILE: packages/bso5-components/README.md
+==============================================================================
+
+# bso5-components
+
+> Переиспользуемые UI-компоненты для [bso5](https://www.npmjs.com/package/bso5) — грид с
+> фильтром/сортировкой/группировкой и рекурсивное дерево с поиском. Без CSS-фреймворка:
+> компоненты headless, стили за вами.
+
+**~2.5 kB min+gzip** · ноль зависимостей (кроме peer `bso5`)
+
+[English version](./README.en.md)
+
+## Установка
+
+```bash
+npm install bso5 bso5-components
+```
+
+`bso5` — peer-зависимость: она должна быть установлена один раз в вашем
+приложении (две копии в бандле = два разных символа `REACTIVE_VALUE` =
+`$()`-привязки молча ломаются).
+
+Для разработки самого пакета нужен Node ≥ 22.12 (требование vitest 5).
+
+## `<Grid>` — генерик-грид
+
+```tsx
+import { signal } from 'bso5';
+import { Grid } from 'bso5-components';
+import type { Column } from 'bso5-components';
+
+interface Issue { id: number; title: string; severity: string; project: string }
+
+const COLS: Column<Issue>[] = [
+  { key: 'id',    header: 'ID',    sort: it => it.id,    cell: it => it.id },
+  { key: 'title', header: 'Title', sort: it => it.title, cell: it => it.title },
+  {
+    key: 'severity',
+    header: 'Sev',
+    sort: it => it.severity,
+    cell: it => <span class="sev">{it.severity}</span>,
+    class: 'sev-cell',
+  },
+];
+
+const issues = signal<Issue[]>(ISSUES);
+
+<Grid
+  rows={issues}                                  // массив | () => массив | Signal | $()
+  columns={COLS}
+  groupBy={it => it.project}                     // опционально, null — без группы
+  initialSort={{ key: 'id', dir: 'desc' }}        // опционально
+  rowKey={it => it.id}                           // опционально, включает keyed-режим
+  searchPlaceholder="Поиск…"
+  empty="Ничего не найдено."
+/>
+```
+
+**Что умеет:** поиск по всем строкам (или по своему предикату), сортировка кликом
+по заголовку, группировка со сворачиваемыми группами, счётчик строк, пустое
+состояние. Состояние (запрос, сортировка, свёрнутые группы) живёт **внутри**
+компонента — экземпляры независимы.
+
+**Свойства `GridProps<Row>`:**
+
+| Проп | Тип | Описание |
+| --- | --- | --- |
+| `rows` | `ReactiveSource<readonly Row[]>` | Источник данных: массив, `() => массив` (перечитывается, автотрекается), `Signal` или `$()` |
+| `columns` | `readonly Column<Row>[]` | Колонки — см. таблицу ниже |
+| `filter?` | `(row: Row, loweredQuery: string) => boolean` | Свой матчер поиска; `loweredQuery` уже приведён к нижнему регистру. По умолчанию ищется подстрока в значениях `sort(row)` всех колонок |
+| `groupBy?` | `(row: Row) => string \| null` | Метка группы; `null` — строка без группы (рендерится перед группами) |
+| `initialSort?` | `{ key: string; dir: 'asc' \| 'desc' }` | Начальная сортировка; отражается в контроле направления |
+| `rowKey?` | `(row: Row) => unknown` | Стабильный ключ строки: включает keyed-`<For>`. Вызывается **только со строкой** — индекс в ключ не входит, иначе сортировка пересоздавала бы узлы |
+| `searchPlaceholder?` | `string` | Плейсхолдер поиска (он же `aria-label`) |
+| `empty?` | `string` | Текст пустого состояния |
+| `class?` | `string` | Доп. класс корневого элемента (по умолчанию `grid`) |
+
+**Колонка `Column<Row>`:**
+
+| Поле | Тип | Обязательно | Описание |
+| --- | --- | --- | --- |
+| `key` | `string` | да | Стабильный id: по нему запоминается активная сортировка |
+| `header` | `string` | да | Надпись в `th` |
+| `cell` | `(row: Row) => JsxChild` | да | Рендер ячейки; может возвращать `$()`-значения |
+| `sort` | `(row: Row) => string \| number` | да | Значение для сортировки (и для текстового поиска по умолчанию) |
+| `sortable?` | `boolean` | нет | Клик по заголовку сортирует (по умолчанию `true`) |
+| `class?` | `string` | нет | Доп. класс `td` |
+| `headerClass?` | `string` | нет | Доп. класс `th` |
+
+**Клавиатура и ARIA:** заголовки получают `scope="col"` и `aria-sort`
+(`ascending`/`descending` только у активной колонки), строка группы —
+`tabindex="0"`, `aria-expanded` и переключение по Enter/Space, поле поиска —
+`aria-label`.
+
+## `<Tree>` — рекурсивное дерево
+
+```tsx
+import { signal } from 'bso5';
+import { Tree } from 'bso5-components';
+import type { TreeData } from 'bso5-components';
+
+// Дерево — просто данные: label + meta + дети.
+const tree = signal<TreeData>({
+  label: 'bso5',
+  meta: '7 items',
+  children: [
+    { label: 'src', meta: '6 items', children: [
+      { label: 'index.ts', meta: '412 B', children: null },
+    ]},
+  ],
+});
+
+<Tree root={tree} searchPlaceholder="Фильтр…" />
+```
+
+**Что умеет:** поиск по метке и мете с авто-раскрытием совпадений, раскрытие
+узлов, счётчик совпадений, пустое состояние. Раскрытие и запрос живут внутри
+экземпляра.
+
+**Свойства `TreeProps`:**
+
+| Проп | Тип | Описание |
+| --- | --- | --- |
+| `root` | `ReactiveSource<TreeData \| null>` | Корень: объект, `() => объект`, `Signal` или `$()` |
+| `searchPlaceholder?` | `string` | Плейсхолдер поиска (он же `aria-label`, если не задан `labels.search`) |
+| `searchDebounce?` | `number \| false` | Задержка поиска в мс; действует от `searchDebounceMinItems` узлов, `false` отключает (по умолчанию 120) |
+| `searchDebounceMinItems?` | `number` | Порог узлов, с которого включается задержка (по умолчанию 200) |
+| `showExpandAll?` | `boolean` | Кнопки «развернуть всё» / «свернуть всё» в панели (по умолчанию `false`) |
+| `labels?` | `Partial<TreeLabels>` | Подписи интерфейса — см. таблицу ниже |
+| `empty?` | `string` | Текст, когда дерево пусто или отфильтровано в ноль |
+| `nodeKey?` | `(node: TreeData, path: string[]) => unknown` | Ключ узла для состояния раскрытия. По умолчанию — путь `label/label/…` |
+| `renderLabel?` | `(node: TreeData) => JsxChild` | Свой рендер метки (иконки, ссылки, обработчики) |
+| `class?` | `string` | Доп. класс корневого `.tree` |
+
+**`TreeData`:** `label: string`, `meta?: string`, `children?: readonly TreeData[] | null`,
+`labelClass?: string`.
+
+**Клавиатура и ARIA:** корень — `role="tree"`, узел — `role="treeitem"` +
+`aria-expanded`, дети — `role="group"`. По Tab дерево — одна остановка (корневая
+строка, `tabindex="0"`), дальше `ArrowDown`/`ArrowUp` двигают фокус по видимым
+строкам, Enter/Space переключают узел, `ArrowRight` раскрывает, `ArrowLeft`
+сворачивает. Фокус возвращается на тот же узел после перерисовки.
+
+### Подписи интерфейса
+
+Все строки по умолчанию английские; переопределяются через `labels`.
+
+| `GridLabels` | По умолчанию | Где видно |
+| --- | --- | --- |
+| `search` | `'Search'` | `aria-label` поля поиска |
+| `searchPlaceholder` | как `search` + `…` | плейсхолдер |
+| `sortDirection` | `'Sort direction'` | `aria-label` контрола направления |
+| `descending` / `ascending` | `'↓ desc'` / `'↑ asc'` | варианты `<option>` |
+| `rows` | `'rows:'` | префикс счётчика; `''` оставляет только число |
+
+| `TreeLabels` | По умолчанию | Где видно |
+| --- | --- | --- |
+| `search` / `searchPlaceholder` | `'Search'` / `'Search…'` | поле поиска |
+| `matched` | `'matched:'` | префикс счётчика; `''` скрывает его |
+| `expandAll` / `collapseAll` | `'Expand all'` / `'Collapse all'` | кнопки при `showExpandAll` |
+
+```tsx
+<Grid rows={rows} columns={cols} labels={{ search: 'Поиск', rows: 'строк:', descending: 'убыв', ascending: 'возр' }} />
+<Tree root={tree} showExpandAll labels={{ matched: 'найдено:', expandAll: 'Развернуть', collapseAll: 'Свернуть' }} />
+```
+
+## Headless-подход и CSS
+
+Компоненты рендерят семантический DOM со стабильными классами:
+
+- `Grid`: `grid`, `toolbar`, `search`, `dir`, `chip`, `arrow`, `group-row`,
+  `toggle`, `count`, `empty`;
+- `Tree`: `tree`, `toolbar`, `search`, `bulk`, `expand-all`, `collapse-all`,
+  `chip`, `node`, `row`, `caret`, `leaf`, `name`, `dir`, `match`, `meta`, `kids`,
+  `empty`.
+
+Готовый CSS — [`examples/dataview/style.css`](../../examples/dataview/style.css),
+разбор разметки и рецепты — [`docs/TREE_GRID.md`](../../docs/TREE_GRID.md).
+
+## Keyed-режим: «ключ = идентичность»
+
+Если задан `rowKey`, `<For>` переиспользует DOM-узлы: пока ключ в списке, узел
+**не перерисовывается**. Значит, изменения данных в существующей строке сами по
+себе не появятся на экране. Два рабочих рецепта:
+
+```tsx
+// 1) привязка поля через $() — обновляется точечно, узел живёт
+{ key: 'title', header: 'Title', sort: r => r.title, cell: r => <b>{$(r, x => x.title)}</b> }
+
+// 2) ключ с отпечатком — узел пересоздаётся только при реальном изменении
+rowKey={r => `${r.id}:${r.updated}`}
+```
+
+Первое дешевле и сохраняет фокус в `<input>`; второе проще, но теряет состояние
+узла при каждой смене данных. Без `rowKey` грид перерисовывает строки целиком —
+это корректно, но дороже.
+
+## Разработка
+
+```bash
+npm ci              # в корне монорепо
+npm test            # 161 тест (ядро + компоненты)
+npm run typecheck
+npm run build
+npm run bench       # замеры грида и дерева
+```
+
+## Лицензия
+
+MIT
+
+==============================================================================
+FILE: docs/README.md
+==============================================================================
+
+# Документация bso5
+
+Два входа в одну и ту же документацию: по задачам (человеку) и одним файлом
+(агенту). Источник истины — Markdown в репозитории; API-примеры компилируются,
+сводный файл генерируется.
+
+## Я человек
+
+Читать в таком порядке:
+
+1. [README пакета ядра](../packages/bso5/README.md) — 10 минут, идея и основные
+   концепции (`Signal`, `Reactive`, `$()`, `<For>`, `<Show>`).
+2. [GUIDE.md](./GUIDE.md) — рецепты под задачи: счётчик, список, загрузка данных,
+   грид, дерево, вью с жизненным циклом.
+3. [API.md](./API.md) — справочник, когда нужны точные сигнатуры и крайние случаи.
+4. [TREE_GRID.md](./TREE_GRID.md) — разметка, классы и минимальный CSS компонентов.
+5. [COMPROMISES.md](./COMPROMISES.md) — почему сделано именно так и чем за это платим.
+
+Быстрый выбор по задаче:
+
+| Хочу | Читать |
+| --- | --- |
+| привязать значение к тексту/атрибуту | [API §3](./API.md#3-привязка-к-dom) |
+| список, который переставляется и держит фокус | [GUIDE §4](./GUIDE.md#4-список-с-keyed-режимом) |
+| показать/скрыть блок | [GUIDE §3](./GUIDE.md#3-условия-и-вкладки) |
+| загрузить данные и показать состояния | [GUIDE §5](./GUIDE.md#5-загрузка-данных) |
+| посчитать производное значение | [GUIDE §6](./GUIDE.md#6-производные-значения) |
+| снять вью и остановить её эффекты | [API §5](./API.md#5-жизненный-цикл-и-владение-эффектами) |
+| подключить без сборщика | [GUIDE §11](./GUIDE.md#11-без-сборщика) |
+| стилизовать грид/дерево | [TREE_GRID.md](./TREE_GRID.md) |
+| понять, почему данные в строке не обновились | [API §11](./API.md#11-ключ--идентичность-важнейшая-ловушка) |
+| «почему так, а не иначе» | [COMPROMISES.md](./COMPROMISES.md) |
+
+## Я LLM или агент
+
+| Что | Файл | Объём |
+| --- | --- | --- |
+| карта документации | [`/llms.txt`](../llms.txt) | ~2 kB |
+| вся документация одним файлом | [`/llms-full.txt`](../llms-full.txt) | ~60 kB, генерируется |
+| полный справочник API | [API.md](./API.md) | основной источник фактов |
+| рецепты и грабли | [GUIDE.md](./GUIDE.md) | §12 — таблица «симптом → причина → что делать» |
+
+Рекомендация: для вопросов по API берите [API.md](./API.md); для «как сделать X» —
+[GUIDE.md](./GUIDE.md); если нужен весь контекст сразу — [`llms-full.txt`](../llms-full.txt).
+
+## Как эта документация поддерживается
+
+| Правило | Чем обеспечено |
+| --- | --- |
+| Примеры из README не расходятся с кодом | [`docs/snippets/`](./snippets) входит в `npm run typecheck` |
+| Сводный файл для LLM актуален | `npm run docs:check` (CI падает, если `llms-full.txt` устарел) |
+| Обещания про производительность не выдуманы | числа из `npm run bench`, команда в README |
+| Ломающие изменения описаны | [`CHANGELOG.md`](../CHANGELOG.md) |
+
+Обновляя API: правьте `README`/`API.md`/`GUIDE.md`, затем
+
+```bash
+npm run docs:llm     # пересобрать llms-full.txt
+npm run docs:check   # проверить, что он не устарел (это же делает CI)
+npm run typecheck    # проверить компилируемые сниппеты
+```
+
+## Состав `docs/`
+
+| Файл | Про что |
+| --- | --- |
+| `API.md` | полный справочник: сигнатуры, семантика, ограничения |
+| `GUIDE.md` | рецепты по задачам и таблица грабель |
+| `TREE_GRID.md` | разметка `Grid`/`Tree`, карта классов, минимальный CSS |
+| `COMPROMISES.md` | осознанные компромиссы реализаций (keyed-`<For>`, Proxy-пути, владение эффектами) |
+| `snippets/` | компилируемые копии примеров из README (входят в `typecheck`) |
+| `REVIEW-2026-11-01.html` | снимок внешней оценки библиотеки и плана доработок (исторический документ) |

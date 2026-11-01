@@ -48,11 +48,18 @@ npm run example:dataview   # vite-дев-сервер examples/dataview
 
 ## Документация
 
-- [packages/bso5/README.md](./packages/bso5/README.md) — русский README ядра: концепции, справочник `h()`, жизненный цикл ([english](./packages/bso5/README.en.md))
-- [packages/bso5-components/README.md](./packages/bso5-components/README.md) — русский README компонентов ([english](./packages/bso5-components/README.en.md))
+- [docs/README.md](./docs/README.md) — навигация: что читать под какую задачу
+- [docs/API.md](./docs/API.md) — полный справочник API (сигнатуры, семантика, ограничения)
+- [docs/GUIDE.md](./docs/GUIDE.md) — рецепты по задачам и таблица грабель
 - [docs/TREE_GRID.md](./docs/TREE_GRID.md) — разметка, карта классов и минимальный CSS для `Grid`/`Tree`
-- [docs/COMPROMISES.md](./docs/COMPROMISES.md) — осознанные компромиссы двух решений, перенятых из реализации DS
+- [packages/bso5/README.md](./packages/bso5/README.md) — вводный README ядра: концепции, справочник `h()`, жизненный цикл ([english](./packages/bso5/README.en.md))
+- [packages/bso5-components/README.md](./packages/bso5-components/README.md) — вводный README компонентов ([english](./packages/bso5-components/README.en.md))
+- [docs/COMPROMISES.md](./docs/COMPROMISES.md) — осознанные компромиссы реализаций
+- [CHANGELOG.md](./CHANGELOG.md) — изменения по версиям
 - [WHERE_DS_WAS_BETTER.md](./WHERE_DS_WAS_BETTER.md) — исходная задача на доработку
+
+Для LLM и агентов: [`llms.txt`](./llms.txt) — карта документации, [`llms-full.txt`](./llms-full.txt) —
+вся документация одним файлом (`npm run docs:llm` пересобирает, `npm run docs:check` сверяет в CI).
 
 ## Лицензия
 
