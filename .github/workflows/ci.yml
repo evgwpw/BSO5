@@ -23,3 +23,22 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # Бенч как дым: полный набор на 10 000 элементах в jsdom занимает ~10 с,
+      # поэтому здесь только малый размер — проверяем, что скрипт жив.
+      - run: node scripts/bench.mjs
+        env:
+          BENCH_SIZES: '1000'
+      # Проверяем состав tarball: без этого сломанный files/exports
+      # обнаруживается только после публикации.
+      - run: npm run pack:check
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:coverage

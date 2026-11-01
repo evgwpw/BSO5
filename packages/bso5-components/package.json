@@ -38,12 +38,24 @@
     "LICENSE"
   ],
   "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evgwpw/BSO5.git",
+    "directory": "packages/bso5-components"
+  },
+  "homepage": "https://github.com/evgwpw/BSO5#readme",
+  "bugs": {
+    "url": "https://github.com/evgwpw/BSO5/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run"
   },
   "peerDependencies": {
-    "bso5": "^0.3.0"
+    "bso5": "^0.4.0"
   },
   "devDependencies": {
     "bso5": "*",

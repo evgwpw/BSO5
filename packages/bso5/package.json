@@ -38,6 +38,18 @@
     "LICENSE"
   ],
   "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evgwpw/BSO5.git",
+    "directory": "packages/bso5"
+  },
+  "homepage": "https://github.com/evgwpw/BSO5#readme",
+  "bugs": {
+    "url": "https://github.com/evgwpw/BSO5/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run"

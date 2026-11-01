@@ -19,6 +19,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "bench": "node scripts/bench.mjs",
+    "pack:check": "npm pack --dry-run -w packages/bso5 && npm pack --dry-run -w packages/bso5-components",
     "example": "vite serve examples/counter",
     "example:dataview": "vite serve examples/dataview"
   },

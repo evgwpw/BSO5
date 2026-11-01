@@ -52,6 +52,12 @@ const treeOf = n => {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const ms = t => `${t.toFixed(1)} ms`;
 
+/** Размеры выборок: `BENCH_SIZES=1000` — быстрый дым в CI, по умолчанию полный набор. */
+const SIZES = (process.env.BENCH_SIZES ?? '1000,10000')
+  .split(',')
+  .map(s => Number(s.trim()))
+  .filter(n => Number.isFinite(n) && n > 0);
+
 function time(label, fn) {
   const t0 = performance.now();
   const out = fn();
@@ -64,7 +70,7 @@ const host = document.getElementById('host');
 
 console.log(`\nNode ${process.version}, jsdom ${dom.window.navigator.userAgent.match(/jsdom\/[\d.]+/)?.[0] ?? ''}\n`);
 
-for (const n of [1000, 10000]) {
+for (const n of SIZES) {
   host.replaceChildren();
   const rows = rowsOf(n);
   const grid = time(`Grid: построить ${n} строк (с группами)`, () =>
@@ -86,7 +92,7 @@ for (const n of [1000, 10000]) {
   console.log(`${'  (после дебаунса строк в tbody)'.padEnd(46)} ${String(filtered.querySelectorAll('tbody tr').length).padStart(10)}`);
 }
 
-for (const n of [1000, 10000]) {
+for (const n of SIZES) {
   host.replaceChildren();
   const tree = time(`Tree: построить ${n} узлов`, () => Tree({ root: treeOf(n) }));
   time(`Tree: вставить ${n} узлов в документ`, () => host.appendChild(tree));
