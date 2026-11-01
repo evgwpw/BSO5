@@ -98,10 +98,10 @@ interface TreeView {
 /* ── helpers ───────────────────────────────────────────────── */
 /* РУС: хелперы */
 
-/** Keeps only nodes whose label matches or that have a matching descendant. */
-/** РУС: Оставляет только узлы, чья метка совпадает или у которых есть совпадающий потомок. */
+/** Keeps only nodes whose label or meta matches, or that have a matching descendant. */
+/** РУС: Оставляет только узлы, чья метка или мета совпадает либо у которых есть совпадающий потомок. */
 function filterTree(node: TreeData, q: string): TreeData | null {
-  const hit = node.label.toLowerCase().includes(q);
+  const hit = node.label.toLowerCase().includes(q) || (node.meta?.toLowerCase().includes(q) ?? false);
   const kids = (node.children ?? [])
     .map(k => filterTree(k, q))
     .filter((k): k is TreeData => k !== null);
@@ -159,6 +159,18 @@ export function Tree(props: TreeProps): HTMLElement {
   /* ── render ──────────────────────────────────────────────── */
   /* РУС: рендер */
 
+  /* Крупные деревья получают дебаунс поиска: перерисовка всего дерева на
+   * каждый символ — O(N). На малых данных задержка только мешает. */
+  // РУС: дебаунс поиска для крупных деревьев.
+  let queryTimer: ReturnType<typeof setTimeout> | null = null;
+  const QUERY_DEBOUNCE_MIN = 200;
+  const QUERY_DEBOUNCE_MS = 120;
+  function onSearchInput(value: string): void {
+    if (queryTimer) { clearTimeout(queryTimer); queryTimer = null; }
+    if (countNodes(resolveSource(root)) < QUERY_DEBOUNCE_MIN) { query.value = value; return; }
+    queryTimer = setTimeout(() => { queryTimer = null; query.value = value; }, QUERY_DEBOUNCE_MS);
+  }
+
   // The JSX expression is typed as Node; the root is always a div, so the
   // downcast is safe (the same pattern the bso5 examples use).
   // РУС: JSX-выражение типизировано как Node; корень всегда div, поэтому
@@ -169,8 +181,9 @@ export function Tree(props: TreeProps): HTMLElement {
         <input
           type="text"
           class="search"
+          aria-label={searchPlaceholder ?? 'Search'}
           placeholder={searchPlaceholder ?? 'Search…'}
-          onInput={e => { query.value = (e.target as HTMLInputElement).value; }}
+          onInput={e => { onSearchInput((e.target as HTMLInputElement).value); }}
         />
         <span class="chip">matched: <b>{$(matchCount)}</b></span>
       </div>
@@ -180,7 +193,7 @@ export function Tree(props: TreeProps): HTMLElement {
           дерево (keyed-For с константным ключом не перерисовался бы — ключ=идентичность). */}
       <For each={() => [treeView.value]}>
         {(v) => v.root !== null
-          ? <div class={`tree ${rootClass}`}>
+          ? <div class={`tree ${rootClass}`} role="tree" aria-label={v.root.label}>
               <TreeItem node={v.root} path={[]} view={v} nodeKey={nodeKey} renderLabel={renderLabel} expanded={expanded} />
             </div>
           : <div class="empty">{empty}</div>}
@@ -200,7 +213,9 @@ function TreeItem(props: {
   expanded: { value: ReadonlySet<string> };
 }): HTMLElement {
   const { node, path, view, nodeKey, renderLabel, expanded } = props;
-  const key = [...path, node.label].join('/');
+  // Ключ раскрытия: nodeKey вызывающего кода, иначе путь по меткам.
+  // РУС: ключ раскрытия — nodeKey вызывающего, иначе путь по меткам.
+  const key = nodeKey ? String(nodeKey(node, path)) : [...path, node.label].join('/');
   const isDir = (node.children ?? []).length > 0;
 
   // While filtering, everything is expanded so matches are visible; otherwise
@@ -208,7 +223,8 @@ function TreeItem(props: {
   // РУС: При фильтрации всё раскрыто, чтобы совпадения были видны; иначе
   // раскрытие берётся из захваченного состояния раскрытия снапшота.
   const open = isDir && (view.query.length > 0 || view.expanded.has(key));
-  const match = view.query.length > 0 && node.label.toLowerCase().includes(view.query);
+  const match = view.query.length > 0
+    && (node.label.toLowerCase().includes(view.query) || (node.meta?.toLowerCase().includes(view.query) ?? false));
 
   const toggle = (): void => {
     if (!isDir) return;
@@ -218,15 +234,39 @@ function TreeItem(props: {
     // РУС: → новый снапшот → полный ре-рендер дерева
   };
 
+  const expand = (): void => {
+    if (!isDir || open) return;
+    const next = new Set(expanded.value);
+    next.add(key);
+    expanded.value = next;
+  };
+
+  const collapse = (): void => {
+    if (!isDir || !open) return;
+    const next = new Set(expanded.value);
+    next.delete(key);
+    expanded.value = next;
+  };
+
   return (
-    (<div class="node">
-      <div class="row" onClick={toggle}>
+    (<div class="node" role="treeitem" aria-expanded={isDir ? String(open) : undefined}>
+      <div
+        class="row"
+        tabindex="0"
+        onClick={toggle}
+        onKeydown={e => {
+          const k = (e as KeyboardEvent).key;
+          if (k === 'Enter' || k === ' ') { e.preventDefault(); toggle(); return; }
+          if (k === 'ArrowRight') { e.preventDefault(); expand(); return; }
+          if (k === 'ArrowLeft') { e.preventDefault(); collapse(); }
+        }}
+      >
         <span class={`caret ${isDir ? '' : 'leaf'}`}>{isDir ? (open ? '▾' : '▸') : '·'}</span>
         <span class={`name ${isDir ? 'dir' : ''} ${match ? 'match' : ''}`}>{renderLabel ? renderLabel(node) : node.label}</span>
         {node.meta ? <span class="meta">{node.meta}</span> : null}
       </div>
       {open ? (
-        <div class="kids">
+        <div class="kids" role="group">
           <For each={node.children ?? []}>
             {(kid) => <TreeItem node={kid} path={[...path, node.label]} view={view} nodeKey={nodeKey} renderLabel={renderLabel} expanded={expanded} />}
           </For>

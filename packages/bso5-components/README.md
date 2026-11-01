@@ -1,8 +1,10 @@
 # bso5-components
 
-> Переиспользуемые UI-компоненты для [bso5](https://www.npmjs.com/package/bso5) — грид с фильтром/сортировкой/группировкой и рекурсивное дерево с поиском. Без CSS-фреймворка: компоненты headless, стили за вами.
+> Переиспользуемые UI-компоненты для [bso5](https://www.npmjs.com/package/bso5) — грид с
+> фильтром/сортировкой/группировкой и рекурсивное дерево с поиском. Без CSS-фреймворка:
+> компоненты headless, стили за вами.
 
-**~1.5 kB min+gzip** · ноль зависимостей (кроме peer `bso5`)
+**~2.5 kB min+gzip** · ноль зависимостей (кроме peer `bso5`)
 
 [English version](./README.en.md)
 
@@ -16,61 +18,87 @@ npm install bso5 bso5-components
 приложении (две копии в бандле = два разных символа `REACTIVE_VALUE` =
 `$()`-привязки молча ломаются).
 
-## Компоненты
+Для разработки самого пакета нужен Node ≥ 22.12 (требование vitest 5).
 
-### `<Grid>` — генерик-грид
+## `<Grid>` — генерик-грид
 
 ```tsx
+import { signal } from 'bso5';
 import { Grid } from 'bso5-components';
 import type { Column } from 'bso5-components';
 
-interface Issue { id: number; title: string; severity: 'critical' | 'high' | 'medium' | 'low'; }
+interface Issue { id: number; title: string; severity: string; project: string }
 
 const COLS: Column<Issue>[] = [
-  { key: 'id',       label: 'ID',   cell: it => it.id },
-  { key: 'title',    label: 'Title', cell: it => it.title },
-  { key: 'severity', label: 'Sev',  cell: it => <span class="sev">{it.severity}</span> },
+  { key: 'id',    header: 'ID',    sort: it => it.id,    cell: it => it.id },
+  { key: 'title', header: 'Title', sort: it => it.title, cell: it => it.title },
+  {
+    key: 'severity',
+    header: 'Sev',
+    sort: it => it.severity,
+    cell: it => <span class="sev">{it.severity}</span>,
+    class: 'sev-cell',
+  },
 ];
 
-const issues = signal(ISSUES);
+const issues = signal<Issue[]>(ISSUES);
 
 <Grid
-  rows={issues}                        // массив | () => массив | Signal | $()
+  rows={issues}                                  // массив | () => массив | Signal | $()
   columns={COLS}
-  groupBy={it => it.project}           // группирует по project; опционально
-  initialSort={{ key: 'updated', dir: 'desc' }}  // начальная сортировка; опционально
-  rowKey={it => it.id}                 // keyed-режим <For>; опционально
+  groupBy={it => it.project}                     // опционально, null — без группы
+  initialSort={{ key: 'id', dir: 'desc' }}        // опционально
+  rowKey={it => it.id}                           // опционально, включает keyed-режим
   searchPlaceholder="Поиск…"
   empty="Ничего не найдено."
 />
 ```
 
-**Возможности:** поиск по всем строкам, сортировка кликом по заголовку,
-группировка с раскрывающимися группами, счётчик строк, пустое состояние.
-Состояние (запрос/сортировка/схлопнутые группы) живёт **внутри** компонента —
-экземпляры независимы.
+**Что умеет:** поиск по всем строкам (или по своему предикату), сортировка кликом
+по заголовку, группировка со сворачиваемыми группами, счётчик строк, пустое
+состояние. Состояние (запрос, сортировка, свёрнутые группы) живёт **внутри**
+компонента — экземпляры независимы.
 
-**Props:**
+**Свойства `GridProps<Row>`:**
 
 | Проп | Тип | Описание |
 | --- | --- | --- |
 | `rows` | `ReactiveSource<readonly Row[]>` | Источник данных: массив, `() => массив` (перечитывается, автотрекается), `Signal` или `$()` |
-| `columns` | `Column<Row>[]` | Определения колонок: `key`, `label`, `cell(row)` — рендер ячейки, `sort(row)` — значение сортировки, `class?` |
-| `filter?` | `(row, query) => boolean` | Пользовательский матчер поиска; по умолчанию — подстрока по всем строковым/числовым полям |
-| `groupBy?` | `(row) => string` | Группировка строк по ключу; не задано — без групп |
-| `initialSort?` | `{ key, dir }` | Начальная сортировка |
-| `rowKey?` | `(row) => unknown` | Стабильный ключ строки: включает keyed-`<For>` (сохраняет фокус ячеек при пересортировке) |
-| `searchPlaceholder?` | `string` | Плейсхолдер поиска |
-| `empty?` | `string \| JsxChild` | Пустое состояние |
+| `columns` | `readonly Column<Row>[]` | Колонки — см. таблицу ниже |
+| `filter?` | `(row: Row, loweredQuery: string) => boolean` | Свой матчер поиска; `loweredQuery` уже приведён к нижнему регистру. По умолчанию ищется подстрока в значениях `sort(row)` всех колонок |
+| `groupBy?` | `(row: Row) => string \| null` | Метка группы; `null` — строка без группы (рендерится перед группами) |
+| `initialSort?` | `{ key: string; dir: 'asc' \| 'desc' }` | Начальная сортировка; отражается в контроле направления |
+| `rowKey?` | `(row: Row) => unknown` | Стабильный ключ строки: включает keyed-`<For>`. Вызывается **только со строкой** — индекс в ключ не входит, иначе сортировка пересоздавала бы узлы |
+| `searchPlaceholder?` | `string` | Плейсхолдер поиска (он же `aria-label`) |
+| `empty?` | `string` | Текст пустого состояния |
+| `class?` | `string` | Доп. класс корневого элемента (по умолчанию `grid`) |
 
-### `<Tree>` — рекурсивное дерево
+**Колонка `Column<Row>`:**
+
+| Поле | Тип | Обязательно | Описание |
+| --- | --- | --- | --- |
+| `key` | `string` | да | Стабильный id: по нему запоминается активная сортировка |
+| `header` | `string` | да | Надпись в `th` |
+| `cell` | `(row: Row) => JsxChild` | да | Рендер ячейки; может возвращать `$()`-значения |
+| `sort` | `(row: Row) => string \| number` | да | Значение для сортировки (и для текстового поиска по умолчанию) |
+| `sortable?` | `boolean` | нет | Клик по заголовку сортирует (по умолчанию `true`) |
+| `class?` | `string` | нет | Доп. класс `td` |
+| `headerClass?` | `string` | нет | Доп. класс `th` |
+
+**Клавиатура и ARIA:** заголовки получают `scope="col"` и `aria-sort`
+(`ascending`/`descending` только у активной колонки), строка группы —
+`tabindex="0"`, `aria-expanded` и переключение по Enter/Space, поле поиска —
+`aria-label`.
+
+## `<Tree>` — рекурсивное дерево
 
 ```tsx
+import { signal } from 'bso5';
 import { Tree } from 'bso5-components';
 import type { TreeData } from 'bso5-components';
 
-// Дерево — просто данные: label + мета + дети.
-const treeData = signal<TreeData>({
+// Дерево — просто данные: label + meta + дети.
+const tree = signal<TreeData>({
   label: 'bso5',
   meta: '7 items',
   children: [
@@ -80,38 +108,69 @@ const treeData = signal<TreeData>({
   ],
 });
 
-<Tree root={treeData} searchPlaceholder="Фильтр…" />
+<Tree root={tree} searchPlaceholder="Фильтр…" />
 ```
 
-**Возможности:** поиск с автораскрытием совпадений и подсветкой, раскрытие
-узлов, клики по узлам (через `renderLabel` вы можете повесить обработчик).
-Данные любого вида адаптируются функцией `toTreeData`-подобным маппером (см.
-[examples/dataview](../../examples/dataview)).
+**Что умеет:** поиск по метке и мете с авто-раскрытием совпадений, раскрытие
+узлов, счётчик совпадений, пустое состояние. Раскрытие и запрос живут внутри
+экземпляра.
 
-**Props:**
+**Свойства `TreeProps`:**
 
 | Проп | Тип | Описание |
 | --- | --- | --- |
-| `root` | `ReactiveSource<TreeData \| null>` | Корень дерева (сигнал снапшота или любой источник) |
-| `renderLabel?` | `(node: TreeData) => JsxChild` | Кастомный рендер метки (ссылки, иконки, обработчики) |
-| `nodeKey?` | `(node: TreeData) => string` | Ключ узла для состояния раскрытия (по умолчанию — путь `label/label/…`) |
-| `searchPlaceholder?` | `string` | Плейсхолдер поиска |
-| `empty?` | `string` | Пустое состояние |
+| `root` | `ReactiveSource<TreeData \| null>` | Корень: объект, `() => объект`, `Signal` или `$()` |
+| `searchPlaceholder?` | `string` | Плейсхолдер поиска (он же `aria-label`) |
+| `empty?` | `string` | Текст, когда дерево пусто или отфильтровано в ноль |
+| `nodeKey?` | `(node: TreeData, path: string[]) => unknown` | Ключ узла для состояния раскрытия. По умолчанию — путь `label/label/…` |
+| `renderLabel?` | `(node: TreeData) => JsxChild` | Свой рендер метки (иконки, ссылки, обработчики) |
+| `class?` | `string` | Доп. класс корневого `.tree` |
+
+**`TreeData`:** `label: string`, `meta?: string`, `children?: readonly TreeData[] | null`,
+`labelClass?: string`.
+
+**Клавиатура и ARIA:** корень — `role="tree"`, узел — `role="treeitem"` +
+`aria-expanded`, дети — `role="group"`, строка узла фокусируется и реагирует на
+Enter/Space (переключить), `ArrowRight` (раскрыть), `ArrowLeft` (свернуть).
 
 ## Headless-подход и CSS
 
-Компоненты рендерят семантический DOM со стабильными классами
-(`toolbar/search/chip/grid/table/group-row/tree/node/row/caret/name/meta/kids/empty/highlight`).
-CSS остаётся за вами — можно взять готовый из
-[examples/dataview/style.css](../../examples/dataview/style.css).
+Компоненты рендерят семантический DOM со стабильными классами:
+
+- `Grid`: `grid`, `toolbar`, `search`, `dir`, `chip`, `arrow`, `group-row`,
+  `toggle`, `count`, `empty`;
+- `Tree`: `tree`, `toolbar`, `search`, `chip`, `node`, `row`, `caret`, `leaf`,
+  `name`, `dir`, `match`, `meta`, `kids`, `empty`.
+
+Готовый CSS — [`examples/dataview/style.css`](../../examples/dataview/style.css),
+разбор разметки и рецепты — [`docs/TREE_GRID.md`](../../docs/TREE_GRID.md).
+
+## Keyed-режим: «ключ = идентичность»
+
+Если задан `rowKey`, `<For>` переиспользует DOM-узлы: пока ключ в списке, узел
+**не перерисовывается**. Значит, изменения данных в существующей строке сами по
+себе не появятся на экране. Два рабочих рецепта:
+
+```tsx
+// 1) привязка поля через $() — обновляется точечно, узел живёт
+{ key: 'title', header: 'Title', sort: r => r.title, cell: r => <b>{$(r, x => x.title)}</b> }
+
+// 2) ключ с отпечатком — узел пересоздаётся только при реальном изменении
+rowKey={r => `${r.id}:${r.updated}`}
+```
+
+Первое дешевле и сохраняет фокус в `<input>`; второе проще, но теряет состояние
+узла при каждой смене данных. Без `rowKey` грид перерисовывает строки целиком —
+это корректно, но дороже.
 
 ## Разработка
 
 ```bash
-npm install          # в корне монорепо
-npm test             # 135 тестов (121 ядро + 14 компоненты)
+npm ci              # в корне монорепо
+npm test            # 161 тест (ядро + компоненты)
 npm run typecheck
-npm run build        # оба пакета
+npm run build
+npm run bench       # замеры грида и дерева
 ```
 
 ## Лицензия

@@ -78,8 +78,16 @@ export interface GridProps<Row> {
   groupBy?: (row: Row) => string | null;
   /** Initial sort column key and direction. Optional. (РУС: Начальная колонка сортировки и направление. Необязательно.) */
   initialSort?: { key: string; dir: 'asc' | 'desc' };
-  /** Stable row key for keyed `<For>` (DOM-node reuse). Optional. (РУС: Стабильный ключ строки для keyed-`<For>` (переиспользование DOM-узлов). Необязателен.) */
-  rowKey?: (row: Row, index: number) => unknown;
+  /**
+   * Stable row key for keyed `<For>` (DOM-node reuse). Optional. Called with
+   * the row only: the rendered index is deliberately not part of the key, so
+   * sorting reorders existing nodes instead of recreating them.
+   *
+   * РУС: Стабильный ключ строки для keyed-`<For>` (переиспользование
+   * DOM-узлов). Необязателен. Вызывается только со строкой: индекс намеренно
+   * не входит в ключ, иначе сортировка пересоздавала бы все узлы.
+   */
+  rowKey?: (row: Row) => unknown;
   /** Search box placeholder. (РУС: Плейсхолдер строки поиска.) */
   searchPlaceholder?: string;
   /** Text shown when no rows match. Optional. (РУС: Текст при отсутствии строк. Необязательно.) */
@@ -180,25 +188,42 @@ export function Grid<Row>(props: GridProps<Row>): HTMLElement {
     collapsedGroups.value = next;
   }
 
-  /** Sort direction arrow — derived from `sortDir` via a signal + effect. */
-  /** РУС: Стрелка направления сортировки — производная от `sortDir` через signal + effect. */
-  const sortArrow = signal('↓');
-  effect(() => { sortArrow.value = sortDir.value === 'asc' ? '↑' : '↓'; });
+  /* Большие источники получают дебаунс: перерисовка таблицы на каждый символ
+   * заметна уже на 300–400 строках, а на малых данных задержка только мешает
+   * (и ломала бы «мгновенный» отклик в тестах). */
+  let queryTimer: ReturnType<typeof setTimeout> | null = null;
+  const QUERY_DEBOUNCE_MIN = 200;
+  const QUERY_DEBOUNCE_MS = 120;
+  function onSearchInput(value: string): void {
+    const total = (resolveSource(rows) ?? []).length;
+    if (queryTimer) { clearTimeout(queryTimer); queryTimer = null; }
+    if (total < QUERY_DEBOUNCE_MIN) { query.value = value; return; }
+    queryTimer = setTimeout(() => { queryTimer = null; query.value = value; }, QUERY_DEBOUNCE_MS);
+  }
 
   // The JSX expression is typed as Node; the root is always a div, so the
   // downcast is safe (the same pattern the bso5 examples use).
   // РУС: JSX-выражение типизировано как Node; корень всегда div, поэтому
   // даункаст безопасен (тот же паттерн, что в примерах bso5).
-  return (
-    (<div class={rootClass}>
+  const root = (
+    <div class={rootClass}>
       <div class="toolbar">
         <input
           type="text"
           class="search"
+          aria-label={searchPlaceholder ?? 'Search'}
           placeholder={searchPlaceholder ?? 'Search…'}
-          onInput={e => { query.value = (e.target as HTMLInputElement).value; }}
+          onInput={e => { onSearchInput((e.target as HTMLInputElement).value); }}
         />
-        <select onChange={e => { sortDir.value = (e.target as HTMLSelectElement).value as 'asc' | 'desc'; }}>
+        {/* Направление сортировки реактивно и в обе стороны: клик по заголовку
+            тоже обновляет этот контрол. */}
+        {/* РУС: направление сортировки реактивно в обе стороны. */}
+        <select
+          class="dir"
+          aria-label="Sort direction"
+          value={$(sortDir)}
+          onChange={e => { sortDir.value = (e.target as HTMLSelectElement).value as 'asc' | 'desc'; }}
+        >
           <option value="desc">↓ desc</option>
           <option value="asc">↑ asc</option>
         </select>
@@ -209,6 +234,7 @@ export function Grid<Row>(props: GridProps<Row>): HTMLElement {
           <tr>
             {columns.map(col => (
               <th
+                scope="col"
                 class={col.headerClass ?? ''}
                 onClick={() => {
                   if (col.sortable === false) return;
@@ -218,7 +244,11 @@ export function Grid<Row>(props: GridProps<Row>): HTMLElement {
               >
                 {col.header}
                 <Show when={() => sortKey.value === col.key}>
-                  <span class="arrow">{$(sortArrow)}</span>
+                  {/* Направление через Show: у ядра нет computed(), а `$()` не умеет сравнения. */}
+                  {/* РУС: направление через Show — computed() в ядре нет. */}
+                  <span class="arrow">
+                    <Show when={() => sortDir.value === 'asc'} fallback="↓">↑</Show>
+                  </span>
                 </Show>
               </th>
             ))}
@@ -234,9 +264,27 @@ export function Grid<Row>(props: GridProps<Row>): HTMLElement {
           <For each={view} key={rowKey ? rowKeyFor : undefined}>
             {(gridRow) =>
               gridRow.kind === 'group' ? (
-                <tr class="group-row" onClick={() => toggleGroup(gridRow.key)}>
+                <tr
+                  class="group-row"
+                  data-group={gridRow.key}
+                  tabindex="0"
+                  onClick={() => toggleGroup(gridRow.key)}
+                  onKeydown={e => {
+                    const k = (e as KeyboardEvent).key;
+                    if (k !== 'Enter' && k !== ' ') return;
+                    e.preventDefault();
+                    toggleGroup(gridRow.key);
+                  }}
+                >
                   <td colspan={columns.length}>
-                    <span class="toggle">{collapsedGroups.peek().has(gridRow.key) ? '▸' : '▾'}</span>
+                    {/* Стрелка читает состояние группы через Show, а не
+                        peek(): в keyed-режиме строка переиспользуется и без
+                        реактивной привязки осталась бы с прежним символом. */}
+                    {/* РУС: стрелка через Show — иначе в keyed-режиме символ
+                        застывает на значении первого рендера. */}
+                    <span class="toggle">
+                      <Show when={() => collapsedGroups.value.has(gridRow.key)} fallback="▾">▸</Show>
+                    </span>
                     {gridRow.key}
                     <span class="count">({gridRow.rows.length})</span>
                   </td>
@@ -255,14 +303,36 @@ export function Grid<Row>(props: GridProps<Row>): HTMLElement {
       <Show when={() => itemCount.value === 0}>
         <div class="empty">{empty}</div>
       </Show>
-    </div>) as HTMLElement
-  );
+    </div>) as HTMLElement;
+
+  /* A11y-состояние, которое нельзя выразить атрибутом в разметке (узлы
+   * переиспользуются): aria-sort у заголовков и aria-expanded у групп. */
+  // РУС: aria-sort и aria-expanded синхронизируются отдельным эффектом.
+  const headCells = [...root.querySelectorAll<HTMLElement>('thead th')];
+  effect(() => {
+    const activeKey = sortKey.value;
+    const dir = sortDir.value;
+    headCells.forEach((th, i) => {
+      const col = columns[i];
+      if (!col) return;
+      if (col.key === activeKey) th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : 'descending');
+      else th.removeAttribute('aria-sort');
+    });
+    const closed = collapsedGroups.value;
+    root.querySelectorAll<HTMLElement>('tr.group-row').forEach(tr => {
+      const key = tr.dataset.group;
+      if (key === undefined) return;
+      tr.setAttribute('aria-expanded', String(!closed.has(key)));
+    });
+  });
+
+  return root;
 
   /** Groups are keyed by their label; items — by the caller-supplied key. */
   /** РУС: Группы ключуются меткой; элементы — ключом, заданным вызывающим. */
-  function rowKeyFor(gridRow: GridRow<Row>, _i: number): unknown {
+  function rowKeyFor(gridRow: GridRow<Row>): unknown {
     if (!rowKey) return undefined;
-    return gridRow.kind === 'group' ? `group:${gridRow.key}` : rowKey(gridRow.row, gridRow.index);
+    return gridRow.kind === 'group' ? `group:${gridRow.key}` : rowKey(gridRow.row);
   }
 }
 
