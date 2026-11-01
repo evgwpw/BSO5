@@ -21,7 +21,9 @@
     "bench": "node scripts/bench.mjs",
     "pack:check": "npm pack --dry-run -w packages/bso5 && npm pack --dry-run -w packages/bso5-components",
     "docs:llm": "node scripts/build-llm-docs.mjs",
-    "docs:check": "node scripts/build-llm-docs.mjs --check && node scripts/check-doc-links.mjs",
+    "docs:props": "node scripts/build-props.mjs",
+    "docs:topics": "node scripts/build-topics.mjs",
+    "docs:check": "node scripts/build-llm-docs.mjs --check && node scripts/build-props.mjs --check && node scripts/build-topics.mjs --check && node scripts/check-doc-links.mjs",
     "docs:html": "node scripts/build-docs-html.mjs --fragment",
     "example": "vite serve examples/counter",
     "example:dataview": "vite serve examples/dataview"

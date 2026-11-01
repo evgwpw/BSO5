@@ -6,11 +6,19 @@
  *
  * Запуск: `node scripts/check-doc-links.mjs`.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+/** Темы генерируются по одной на раздел — перечисляем каталог, а не список. */
+const topicDirs = ['docs/topics', 'docs/topics/en'];
+const topicFiles = topicDirs
+  .filter(dir => existsSync(join(root, dir)))
+  .flatMap(dir => readdirSync(join(root, dir))
+    .filter(name => name.endsWith('.md'))
+    .map(name => `${dir}/${name}`));
 
 const FILES = [
   'README.md',
@@ -19,11 +27,13 @@ const FILES = [
   'docs/README.md',
   'docs/API.md',
   'docs/API.en.md',
+  'docs/PROPS.md',
   'docs/GUIDE.md',
   'docs/GUIDE.en.md',
   'docs/TREE_GRID.md',
   'packages/bso5/README.md',
   'packages/bso5-components/README.md',
+  ...topicFiles,
 ];
 
 const LINK = /\]\(([^)\s]+)\)/g;
