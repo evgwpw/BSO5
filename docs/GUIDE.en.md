@@ -5,6 +5,10 @@ self-contained and can be copied as a whole. Full signatures — [API.en.md](./A
 
 Русская версия: [GUIDE.md](./GUIDE.md).
 
+The resulting DOM of every recipe is pinned by
+[`packages/bso5-components/tests/recipes.test.tsx`](../packages/bso5-components/tests/recipes.test.tsx):
+if the code starts producing different markup, a test fails — not a reader.
+
 - [1. Counter and text field](#1-counter-and-text-field)
 - [2. Lists: with and without a key](#2-lists-with-and-without-a-key)
 - [3. Conditionals and tabs](#3-conditionals-and-tabs)

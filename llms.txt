@@ -1,55 +1,32 @@
 # bso5
 
-> bso5 — крошечная реактивная DOM-библиотека на TypeScript (4.2 kB min+gzip, ноль
-> зависимостей) с первоклассным JSX и точечными обновлениями DOM; `bso5-components` —
-> headless-грид и дерево поверх неё. Состояние: `Signal`, глубокий прокси `Reactive`,
-> `$()` для привязки значений в разметку, `<For>`/`<Show>` для списков и условий.
+> Тонкая реактивная DOM-библиотека на TypeScript: 4.2 kB min+gzip, ноль зависимостей,
+> JSX без фреймворка, точечные обновления DOM. Пакет `bso5-components` — headless грид и
+> дерево поверх неё. Состояние: `Signal`, прокси `Reactive`, `$()` для привязки, `<For>`, `<Show>`.
 >
-> bso5 is a tiny reactive DOM library for TypeScript (4.2 kB min+gzip, no dependencies)
-> with first-class JSX and in-place DOM updates; `bso5-components` adds a headless grid
-> and tree on top. State: `Signal`, a deep `Reactive` proxy, `$()` to bind values into
-> markup, `<For>`/`<Show>` for lists and conditionals.
+> A tiny reactive DOM library for TypeScript: 4.2 kB min+gzip, no dependencies, plain JSX,
+> in-place DOM updates. `bso5-components` adds a headless grid and tree.
 
-Ядро — 0.4.0, компоненты — 0.2.0. Браузер: ES2020. Сборка не обязательна: `dist` — ESM,
-подключается через `<script type="importmap">`.
+**Если читаешь один файл — [docs/API.en.md](docs/API.en.md)** (6k токенов, английский,
+все сигнатуры и ограничения). По-русски — [docs/API.md](docs/API.md) (10k токенов).
 
-## Документация
+## Задача → файл
 
-- [API.md](docs/API.md): полный справочник — сигнатуры `Signal`/`Reactive`/`effect`/`computed`/`$`/`h`/`mount`/`<For>`/`<Show>`, пропсы `Grid`/`Tree`, семантика, ограничения.
-- [API.en.md](docs/API.en.md): the same reference in English.
-- [GUIDE.md](docs/GUIDE.md): рецепты по задачам (форма, keyed-список, загрузка данных, грид, дерево, вью с жизненным циклом) и таблица «симптом → причина → что делать».
-- [GUIDE.en.md](docs/GUIDE.en.md): the same recipes in English.
-- [TREE_GRID.md](docs/TREE_GRID.md): разметка компонентов, карта CSS-классов, минимальный CSS.
-- [docs/README.md](docs/README.md): навигация по задачам и правила поддержки документации.
-- [packages/bso5/README.md](packages/bso5/README.md): вводный README ядра (концепции, справочник `h()`, жизненный цикл).
-- [packages/bso5-components/README.md](packages/bso5-components/README.md): вводный README компонентов.
-- [COMPROMISES.md](docs/COMPROMISES.md): осознанные компромиссы — keyed-`<For>`, трассировка путей через Proxy, владение эффектами, минимальные перемещения узлов.
-- [CHANGELOG.md](CHANGELOG.md): изменения по версиям, включая ломающие.
+- «как сделать X» → [docs/GUIDE.en.md](docs/GUIDE.en.md) (3k) / [docs/GUIDE.md](docs/GUIDE.md) (5k): 12 рецептов + таблица «симптом → причина → что делать».
+- точные сигнатуры, семантика, крайние случаи → [docs/API.en.md](docs/API.en.md) / [docs/API.md](docs/API.md).
+- пропсы компонентов из типов, без ручного текста → [docs/PROPS.md](docs/PROPS.md).
+- отдельная тема без чтения всего справочника → [docs/topics/](docs/topics/index.md) (по 0.5–2 kB на тему).
+- разметка, классы, минимальный CSS → [docs/TREE_GRID.md](docs/TREE_GRID.md).
+- почему сделано именно так → [docs/COMPROMISES.md](docs/COMPROMISES.md).
+- изменения по версиям → [CHANGELOG.md](CHANGELOG.md).
 
-Точные типы: `packages/bso5/dist/index.d.ts` и `packages/bso5-components/dist/index.d.ts`
-(генерируются `npm run build`, там же `.d.ts.map` на исходники).
+## Всё сразу
 
-## Примеры
-
-- [examples/importmap](examples/importmap/index.html): работа без сборщика на `importmap`.
-- [examples/counter](examples/counter): счётчик с историей, только ядро.
-- [examples/dataview](examples/dataview): грид и дерево на `bso5-components`.
-
-## Команды
-
-```bash
-npm ci               # установка по lock (Node >= 22.12, npm >= 10)
-npm test             # 184 теста (jsdom)
-npm run typecheck    # tsc, включая компилируемые сниппеты документации
-npm run build        # dist обоих пакетов (ESM + .d.ts + sourcemaps)
-npm run bench        # замеры грида и дерева
-npm run docs:llm     # пересобрать llms-full.txt и llms-full.en.txt
-npm run docs:check   # проверить, что они актуальны, и что ссылки живые
-npm run docs:html    # одностраничный HTML-справочник (.qwen/tmp, в git не попадает)
-```
+- [llms-full.en.txt](llms-full.en.txt) — 14.5k токенов, английский.
+- [llms-full.txt](llms-full.txt) — 32k токенов, русский (дорого, берите по частям выше).
 
 ## Optional
 
-- [llms-full.txt](llms-full.txt): вся русская документация одним файлом (~70 kB) для загрузки в контекст модели.
-- [llms-full.en.txt](llms-full.en.txt): the same in English (~55 kB).
-- [docs/REVIEW-2026-11-01.html](docs/REVIEW-2026-11-01.html): историческая внешняя оценка библиотеки и плана доработок.
+- [README.md](README.md) — обзор монорепо и команды; [packages/bso5/README.md](packages/bso5/README.md) — вводный README ядра.
+- [examples/importmap](examples/importmap/index.html) — работа без сборщика.
+- Точные типы: `packages/bso5/dist/index.d.ts`, `packages/bso5-components/dist/index.d.ts`.

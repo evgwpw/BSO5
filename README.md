@@ -23,10 +23,16 @@ docs/
 
 ```bash
 npm ci               # строгая установка по package-lock
-npm test             # 161 тест
+npm test             # 197 тестов (jsdom), включая исполняемые рецепты документации
 npm run typecheck    # строгий TS по обоим пакетам, examples и docs/snippets
-npm run build        # dist/ обоих пакетов
+npm run build        # dist/ обоих пакетов (ESM + .d.ts + sourcemaps)
 npm run bench        # замеры грида и дерева (после build)
+npm run docs:check   # актуальность сгенерированных файлов, ссылок и якорей
+npm run docs:llm     # пересобрать llms-full.txt и llms-full.en.txt
+npm run docs:props   # пересобрать PROPS.md из типов
+npm run docs:topics  # пересобрать docs/topics/*
+npm run docs:html    # одностраничный HTML-справочник (.qwen/tmp, в git не попадает)
+npm run pack:check   # состав публикуемых tarball
 npm run example            # vite-дев-сервер examples/counter
 npm run example:dataview   # vite-дев-сервер examples/dataview
 ```
@@ -51,6 +57,8 @@ npm run example:dataview   # vite-дев-сервер examples/dataview
 - [docs/README.md](./docs/README.md) — навигация: что читать под какую задачу
 - [docs/API.md](./docs/API.md) — полный справочник API (сигнатуры, семантика, ограничения) · [english](./docs/API.en.md)
 - [docs/GUIDE.md](./docs/GUIDE.md) — рецепты по задачам и таблица грабель · [english](./docs/GUIDE.en.md)
+- [docs/PROPS.md](./docs/PROPS.md) — пропсы и опции, сгенерированные из TypeScript-типов
+- [docs/topics/](./docs/topics/index.md) — короткие темы для точечного чтения · [english](./docs/topics/en/index.md)
 - [docs/TREE_GRID.md](./docs/TREE_GRID.md) — разметка, карта классов и минимальный CSS для `Grid`/`Tree`
 - [packages/bso5/README.md](./packages/bso5/README.md) — вводный README ядра: концепции, справочник `h()`, жизненный цикл ([english](./packages/bso5/README.en.md))
 - [packages/bso5-components/README.md](./packages/bso5-components/README.md) — вводный README компонентов ([english](./packages/bso5-components/README.en.md))
