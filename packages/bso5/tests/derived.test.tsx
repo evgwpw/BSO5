@@ -5,8 +5,8 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import {
-  Show, computed, createScope, dispose, effect, h, runInScope,
-  setEffectErrorHandler, signal, $,
+  Reactive, Show, computed, createScope, dispose, effect, h, runInScope,
+  setEffectErrorHandler, signal, watch, $,
 } from 'bso5';
 import type { BoundValue } from 'bso5';
 
@@ -81,6 +81,57 @@ describe('$(): типизация', () => {
     const count = signal(1);
     const n: BoundValue<number> = $(count);
     expect(n.value).toBe(1);
+  });
+});
+
+describe('$() и watch(): вложенный прокси', () => {
+  it('$() на вложенном прокси обновляется от своего поля', () => {
+    const model = new Reactive({ rows: [{ title: 'A' }, { title: 'B' }] });
+    const row = model.value.rows[0];
+    const bound = $(row, x => x.title);
+
+    expect(bound.value).toBe('A'); // до исправления здесь был undefined
+
+    let calls = 0;
+    const off = bound.subscribe(() => { calls++; });
+    model.value.rows[0].title = 'A2';
+    expect(calls).toBe(1);
+    expect(bound.value).toBe('A2');
+    off();
+  });
+
+  it('$() от корня видит замену промежуточного узла, вложенный прокси — нет', () => {
+    const model = new Reactive({ rows: [{ title: 'A' }] });
+
+    // От корня: путь 'rows.0.title' перепривязывается при замене слота.
+    const fromRoot = $(model.value, x => x.rows[0].title);
+    let rootCalls = 0;
+    const offRoot = fromRoot.subscribe(() => { rootCalls++; });
+
+    // Вложенный прокси привязан к самому объекту — его слот в массиве не его дело.
+    const fromRow = $(model.value.rows[0], x => x.title);
+    let rowCalls = 0;
+    const offRow = fromRow.subscribe(() => { rowCalls++; });
+
+    model.value.rows[0] = { title: 'Z' };
+    expect(rootCalls).toBeGreaterThan(0);
+    expect(fromRoot.value).toBe('Z');
+
+    expect(rowCalls).toBe(0);            // задокументированная граница
+    expect(fromRow.value).toBe('A');     // привязка держит тот объект, который дали
+
+    offRoot();
+    offRow();
+  });
+
+  it('watch() на вложенном прокси подписывается на его путь', () => {
+    const model = new Reactive({ rows: [{ done: false }] });
+    let calls = 0;
+    const off = watch(model.value.rows[0], x => x.done, () => { calls++; });
+
+    model.value.rows[0].done = true;
+    expect(calls).toBe(1);
+    off();
   });
 });
 

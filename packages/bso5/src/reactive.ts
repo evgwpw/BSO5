@@ -835,6 +835,7 @@ function shouldProxy(value: object): boolean {
 /** The shape returned by `$()`. (РУС: Форма значения, возвращаемого `$()`.) */
 export interface BoundValue<T = unknown> {
   readonly [REACTIVE_VALUE]: true;
+  /** Current value of the bound source. (РУС: Текущее значение источника привязки.) */
   readonly value: T;
   subscribe(cb: WatchCallback): () => void;
 }
@@ -886,10 +887,27 @@ export function $(obj: Signal<any> | object, path?: (t: any) => any): BoundValue
       subscribe: () => () => {},
     };
   }
+  const pathStr = getPropertyName(path);
+  if (!pathStr) {
+    throw new Error('bso5: $() requires a plain property path (e.g. x => x.user.name)');
+  }
+  // The root has a real path from the tree root, so the subscription can also
+  // survive replacement of an intermediate object (`model.user = {...}`).
+  // A nested proxy has no root path, so it binds to that object: later writes to
+  // its fields are seen, while replacing its slot in the parent is not — bind
+  // from the root (`$(model.value, x => x.rows[0].title)`) when that matters.
+  // РУС: У корня есть настоящий путь от корня дерева, поэтому подписка переживает
+  // и замену промежуточного объекта (`model.user = {…}`). У вложенного прокси
+  // пути от корня нет, поэтому он привязывается к самому объекту: записи в его
+  // поля видны, а замена его слота в родителе — нет (для этого привязывайтесь
+  // от корня: `$(model.value, x => x.rows[0].title)`).
+  const isRoot = obj === reactor.target || obj === reactor.value;
   return {
     [REACTIVE_VALUE]: true,
-    get value() { return path(reactor.value); },
-    subscribe: (cb: WatchCallback) => reactor.watch(path as PathAccessor<any, unknown>, cb),
+    get value() { return path(obj); },
+    subscribe: (cb: WatchCallback) => isRoot
+      ? reactor.watch(pathStr, cb)
+      : subscribeToAccessor(obj, path, cb),
   };
 }
 
@@ -904,11 +922,34 @@ function reactorOf(obj: object): Reactive<any> | undefined {
 }
 
 /**
- * Free `watch()`: subscribes to a `Signal` or a path of a `Reactive` root.
- * Returns an unsubscription function.
+ * Subscribes `cb` to `path(obj)`, tracking the property chain **through the
+ * given proxy**. Unlike `Reactive.watch`, which resolves paths from the root,
+ * this works for the root object and for any nested proxy alike.
  *
- * РУС: Свободный `watch()`: подписывается на `Signal` или путь корня `Reactive`.
- * Возвращает функцию отписки.
+ * РУС: Подписывает `cb` на `path(obj)`, отслеживая цепочку свойств **через
+ * переданный прокси**. В отличие от `Reactive.watch`, который разрешает путь от
+ * корня, работает и для корня, и для любого вложенного прокси.
+ */
+function subscribeToAccessor(
+  obj: object,
+  path: PathAccessor<any, unknown>,
+  cb: WatchCallback,
+): () => void {
+  const holder = signal<unknown>(path(obj));
+  const stop = effect(() => { holder.value = path(obj); });
+  const off = holder.subscribe(cb);
+  return () => {
+    off();
+    stop();
+  };
+}
+
+/**
+ * Free `watch()`: subscribes to a `Signal` or to a path of a `Reactive` object
+ * (root or any nested proxy). Returns an unsubscription function.
+ *
+ * РУС: Свободный `watch()`: подписывается на `Signal` или путь объекта
+ * `Reactive` (корня или любого вложенного прокси). Возвращает функцию отписки.
  */
 export function watch(
   source: Signal<unknown> | object,
@@ -920,6 +961,21 @@ export function watch(
   if (!reactor) {
     throw new TypeError('bso5: watch() source must be a Signal or a Reactive value/proxy');
   }
-  return reactor.watch(path as string, cb);
+  if (typeof path === 'string') return reactor.watch(path, cb);
+
+  // An expression accessor has no path: reject early, as Reactive.watch does.
+  // РУС: У аксессора-выражения нет пути — отвергаем сразу, как Reactive.watch.
+  const pathStr = getPropertyName(path);
+  if (!pathStr) {
+    throw new Error('bso5: watch() requires a plain property path (e.g. x => x.user.name)');
+  }
+  // Root paths keep the re-binding behaviour of Reactive.watch; a nested proxy
+  // binds to its own object (see the note in `$()`).
+  // РУС: Пути от корня сохраняют перепривязку из Reactive.watch; вложенный прокси
+  // привязывается к своему объекту (см. пояснение в `$()`).
+  const isRoot = source === reactor.target || source === reactor.value;
+  return isRoot
+    ? reactor.watch(pathStr, cb)
+    : subscribeToAccessor(source, path as PathAccessor<any, unknown>, cb);
 }
 
