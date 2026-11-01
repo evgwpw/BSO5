@@ -1,22 +1,29 @@
 {
   "name": "bso5-monorepo",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "license": "MIT",
   "workspaces": [
     "packages/*"
   ],
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0",
+    "npm": ">=10.0.0"
+  },
+  "packageManager": "npm@10.9.9",
   "scripts": {
     "build": "npm run build -w packages/bso5 && npm run build -w packages/bso5-components",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "bench": "node scripts/bench.mjs",
     "example": "vite serve examples/counter",
     "example:dataview": "vite serve examples/dataview"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^5.0.0",
     "jsdom": "^29.1.1",
     "typescript": "^5.0.0",

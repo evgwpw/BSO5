@@ -1,6 +1,6 @@
 {
   "name": "bso5",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Reactive DOM without the bloat — a tiny TypeScript library with Signal/Reactive state and first-class JSX support. No framework.",
   "type": "module",
   "license": "MIT",

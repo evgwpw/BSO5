@@ -1,6 +1,6 @@
 {
   "name": "bso5-components",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reusable headless data components on top of bso5: a generic filterable/sortable/groupable Grid and a filterable Tree. Bring your own CSS.",
   "type": "module",
   "license": "MIT",
