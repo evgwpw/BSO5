@@ -87,18 +87,23 @@
 <div>
   <div class="toolbar">
     <input class="search" type="text" aria-label="Search" placeholder="Search…">
+    <!-- только при showExpandAll -->
+    <span class="bulk">
+      <button type="button" class="expand-all">Expand all</button>
+      <button type="button" class="collapse-all">Collapse all</button>
+    </span>
     <span class="chip">matched: <b>7</b></span>
   </div>
   <div class="tree " role="tree" aria-label="bso5">
     <div class="node" role="treeitem" aria-expanded="true">
-      <div class="row" tabindex="0">
+      <div class="row" data-key="root" tabindex="0">
         <span class="caret ">▾</span>
         <span class="name dir ">bso5</span>
         <span class="meta">7 items</span>
       </div>
       <div class="kids" role="group">
         <div class="node" role="treeitem">
-          <div class="row" tabindex="0">
+          <div class="row" data-key="root/index.ts" tabindex="-1">
             <span class="caret leaf">·</span>
             <span class="name  match">index.ts</span>
             <span class="meta">412 B</span>
@@ -110,14 +115,20 @@
 </div>
 ```
 
+`data-key` — ключ раскрытия (для `nodeKey` берётся из него), по нему же
+восстанавливается фокус после перерисовки. `tabindex="0"` только у корневой
+строки: Tab входит в дерево один раз, дальше — стрелки.
+
 ### Классы
 
 | Класс | Где | Что это |
 | --- | --- | --- |
 | `toolbar`, `search`, `chip` | панель | как в `Grid` |
+| `bulk` | `span` в панели | контейнер кнопок «развернуть/свернуть всё» |
+| `expand-all` / `collapse-all` | `button` | массовое раскрытие, при `showExpandAll` |
 | `tree` | корень дерева | `role="tree"`; доп. класс через проп `class` |
 | `node` | узел | `role="treeitem"`, `aria-expanded` у папок |
-| `row` | строка узла | фокусируется (`tabindex="0"`), клик и Enter/Space переключают |
+| `row` | строка узла | `data-key` — ключ узла; `tabindex="0"` только у корня, остальные `-1` |
 | `caret` | маркер | `▾` открыто / `▸` закрыто / `·` лист (`leaf`) |
 | `name` | метка | `dir` у папок, `match` у совпадений с запросом |
 | `meta` | вторичный текст | размеры, счётчики |

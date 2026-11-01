@@ -66,3 +66,21 @@ export function gridWithLiveCells(): HTMLElement {
 
 /** Второй рецепт: ключ с отпечатком — узел пересоздаётся при смене данных. */
 export const fingerprintKey = (r: Issue): string => `${r.id}:${r.title}`;
+
+/* Подписи интерфейса и настройка поиска (умолчания английские). */
+export function localizedGrid(): HTMLElement {
+  return Grid({
+    rows: issues,
+    columns: COLS,
+    searchDebounce: 200,
+    searchDebounceMinItems: 50,
+    labels: {
+      search: 'Поиск по задачам',
+      searchPlaceholder: 'начните вводить…',
+      sortDirection: 'Направление сортировки',
+      descending: 'по убыванию',
+      ascending: 'по возрастанию',
+      rows: 'строк:',
+    },
+  });
+}

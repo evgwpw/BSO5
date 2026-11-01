@@ -120,7 +120,11 @@ const tree = signal<TreeData>({
 | Проп | Тип | Описание |
 | --- | --- | --- |
 | `root` | `ReactiveSource<TreeData \| null>` | Корень: объект, `() => объект`, `Signal` или `$()` |
-| `searchPlaceholder?` | `string` | Плейсхолдер поиска (он же `aria-label`) |
+| `searchPlaceholder?` | `string` | Плейсхолдер поиска (он же `aria-label`, если не задан `labels.search`) |
+| `searchDebounce?` | `number \| false` | Задержка поиска в мс; действует от `searchDebounceMinItems` узлов, `false` отключает (по умолчанию 120) |
+| `searchDebounceMinItems?` | `number` | Порог узлов, с которого включается задержка (по умолчанию 200) |
+| `showExpandAll?` | `boolean` | Кнопки «развернуть всё» / «свернуть всё» в панели (по умолчанию `false`) |
+| `labels?` | `Partial<TreeLabels>` | Подписи интерфейса — см. таблицу ниже |
 | `empty?` | `string` | Текст, когда дерево пусто или отфильтровано в ноль |
 | `nodeKey?` | `(node: TreeData, path: string[]) => unknown` | Ключ узла для состояния раскрытия. По умолчанию — путь `label/label/…` |
 | `renderLabel?` | `(node: TreeData) => JsxChild` | Свой рендер метки (иконки, ссылки, обработчики) |
@@ -130,8 +134,33 @@ const tree = signal<TreeData>({
 `labelClass?: string`.
 
 **Клавиатура и ARIA:** корень — `role="tree"`, узел — `role="treeitem"` +
-`aria-expanded`, дети — `role="group"`, строка узла фокусируется и реагирует на
-Enter/Space (переключить), `ArrowRight` (раскрыть), `ArrowLeft` (свернуть).
+`aria-expanded`, дети — `role="group"`. По Tab дерево — одна остановка (корневая
+строка, `tabindex="0"`), дальше `ArrowDown`/`ArrowUp` двигают фокус по видимым
+строкам, Enter/Space переключают узел, `ArrowRight` раскрывает, `ArrowLeft`
+сворачивает. Фокус возвращается на тот же узел после перерисовки.
+
+### Подписи интерфейса
+
+Все строки по умолчанию английские; переопределяются через `labels`.
+
+| `GridLabels` | По умолчанию | Где видно |
+| --- | --- | --- |
+| `search` | `'Search'` | `aria-label` поля поиска |
+| `searchPlaceholder` | как `search` + `…` | плейсхолдер |
+| `sortDirection` | `'Sort direction'` | `aria-label` контрола направления |
+| `descending` / `ascending` | `'↓ desc'` / `'↑ asc'` | варианты `<option>` |
+| `rows` | `'rows:'` | префикс счётчика; `''` оставляет только число |
+
+| `TreeLabels` | По умолчанию | Где видно |
+| --- | --- | --- |
+| `search` / `searchPlaceholder` | `'Search'` / `'Search…'` | поле поиска |
+| `matched` | `'matched:'` | префикс счётчика; `''` скрывает его |
+| `expandAll` / `collapseAll` | `'Expand all'` / `'Collapse all'` | кнопки при `showExpandAll` |
+
+```tsx
+<Grid rows={rows} columns={cols} labels={{ search: 'Поиск', rows: 'строк:', descending: 'убыв', ascending: 'возр' }} />
+<Tree root={tree} showExpandAll labels={{ matched: 'найдено:', expandAll: 'Развернуть', collapseAll: 'Свернуть' }} />
+```
 
 ## Headless-подход и CSS
 
@@ -139,8 +168,9 @@ Enter/Space (переключить), `ArrowRight` (раскрыть), `ArrowLef
 
 - `Grid`: `grid`, `toolbar`, `search`, `dir`, `chip`, `arrow`, `group-row`,
   `toggle`, `count`, `empty`;
-- `Tree`: `tree`, `toolbar`, `search`, `chip`, `node`, `row`, `caret`, `leaf`,
-  `name`, `dir`, `match`, `meta`, `kids`, `empty`.
+- `Tree`: `tree`, `toolbar`, `search`, `bulk`, `expand-all`, `collapse-all`,
+  `chip`, `node`, `row`, `caret`, `leaf`, `name`, `dir`, `match`, `meta`, `kids`,
+  `empty`.
 
 Готовый CSS — [`examples/dataview/style.css`](../../examples/dataview/style.css),
 разбор разметки и рецепты — [`docs/TREE_GRID.md`](../../docs/TREE_GRID.md).

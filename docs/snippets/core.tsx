@@ -5,10 +5,10 @@
  * Файл включён в `npm run typecheck` — документация не может разойтись с API.
  */
 import {
-  Reactive, batch, createScope, dispose, effect, h, mount,
-  onScopeDispose, runInScope, signal, untrack, $,
+  Reactive, batch, computed, createScope, dispose, effect, h, mount,
+  onScopeDispose, runInScope, setEffectErrorHandler, signal, untrack, $,
 } from 'bso5';
-import type { BoundValue } from 'bso5';
+import type { BoundValue, EffectOptions } from 'bso5';
 import { Tree } from 'bso5-components';
 import type { TreeData } from 'bso5-components';
 
@@ -36,6 +36,8 @@ export function fileTreeWithKeys(): HTMLElement {
     nodeKey: (node, path) => [...path, node.label].join('/'),
     renderLabel: node => <code>{node.label}</code>,
     empty: 'Ничего не найдено.',
+    showExpandAll: true,
+    labels: { matched: 'найдено:', expandAll: 'Развернуть', collapseAll: 'Свернуть' },
   });
 }
 
@@ -95,4 +97,45 @@ const state = new Reactive({ count: 0 });
 
 export function countBinding(): BoundValue<number> {
   return $(state.value, x => x.count);
+}
+
+/* ── computed(): производное значение ──────────────────────── */
+
+export function parityOf(count: ReturnType<typeof signal<number>>): string {
+  const parity = computed(() => (count.value % 2 === 0 ? 'чётное' : 'нечётное'));
+  return parity.value;
+}
+
+export function derivedLabel(): HTMLElement {
+  const count = signal(2);
+  const doubled = computed(() => count.value * 2);
+  // `computed` — это Signal, поэтому работает в `$()` и в `each`.
+  return h('output', null, $(doubled));
+}
+
+/* ── ошибки эффектов ───────────────────────────────────────── */
+
+export const withPerEffectHandler: EffectOptions = {
+  onError: error => { console.error('effect failed', error); },
+};
+
+export function guardedEffect(): void {
+  effect(() => { /* … */ }, withPerEffectHandler);
+  setEffectErrorHandler(error => { console.error('any effect failed', error); });
+  setEffectErrorHandler(null); // назад в console.error
+}
+
+/* ── ref и фаза перехвата ──────────────────────────────────── */
+
+export function withRef(): HTMLInputElement {
+  let input: HTMLInputElement | null = null;
+  const el = h('input', { ref: node => { input = node as HTMLInputElement; } });
+  return input ?? el;
+}
+
+export function capturePhaseHandler(): HTMLElement {
+  return h('div', {
+    // Фаза перехвата: обработчик сработает до обработчика цели.
+    onInputCapture: e => { console.error('captured', (e.target as HTMLInputElement).value); },
+  });
 }
