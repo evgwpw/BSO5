@@ -43,6 +43,8 @@ export interface DOMAttributes {
   title?: AttrValue<string>;
   style?: Partial<CSSStyleDeclaration> | string;
   dataset?: Record<string, string | number | boolean>;
+  /** Receives the created element (no `ref` object needed). (РУС: Получает созданный элемент (объект `ref` не нужен).) */
+  ref?: (el: HTMLElement) => void;
   hidden?: boolean;
   type?: string;
   value?: AttrValue<unknown>;

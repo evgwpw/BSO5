@@ -40,6 +40,8 @@ export type Attrs = Record<string, unknown> & {
   class?: string;
   className?: string;
   style?: StyleObject | string;
+  /** Receives the created element — the only supported way to grab a node. (РУС: Получает созданный элемент — единственный способ получить узел.) */
+  ref?: (el: HTMLElement) => void;
   /** Event handlers keep their `Event` context so `e.target` is not `any`. (РУС: Обработчики сохраняют контекст `Event`, чтобы `e.target` не был `any`.) */
   [key: `on${string}`]: ((event: Event) => void) | undefined;
 };
@@ -128,6 +130,12 @@ function applyAttr(el: HTMLElement, key: string, value: unknown): void {
 
 /** Applies a plain (non-reactive) attribute value. (РУС: Применяет обычное (нереактивное) значение атрибута.) */
 function applyAttrRaw(el: HTMLElement, key: string, value: unknown): void {
+  // `ref` is not an attribute: it is the element itself, handed to the caller.
+  // РУС: `ref` — не атрибут, а сам элемент, отданный вызывающему.
+  if (key === 'ref') {
+    if (typeof value === 'function') (value as (el: HTMLElement) => void)(el);
+    return;
+  }
   if (value === null || value === undefined || value === false) {
     el.removeAttribute(key);
     return;
@@ -155,7 +163,8 @@ function applyAttrRaw(el: HTMLElement, key: string, value: unknown): void {
     return;
   }
   if (key.startsWith('on') && typeof value === 'function') {
-    el.addEventListener(eventNameOf(key), value as EventListener);
+    const { event, capture } = parseEventProp(key);
+    el.addEventListener(event, value as EventListener, capture ? { capture: true } : undefined);
     return;
   }
   if (key === 'value' || key === 'checked' || key === 'selected' || key === 'disabled') {
@@ -175,13 +184,23 @@ function applyAttrRaw(el: HTMLElement, key: string, value: unknown): void {
   el.setAttribute(key, typeof value === 'object' ? stringify(value) : String(value));
 }
 
-/** Maps a JSX handler prop to a DOM event name. (РУС: Переводит проп-обработчик в имя DOM-события.) */
-function eventNameOf(key: string): string {
-  const raw = key.slice(2).toLowerCase();
+/**
+ * Maps a JSX handler prop to a DOM event name and phase.
+ * `onClick` → `click`, `onDoubleClick` → `dblclick`, `onInputCapture` →
+ * `input` in the capture phase.
+ *
+ * РУС: Переводит проп-обработчик в имя DOM-события и фазу: `onClick` → `click`,
+ * `onDoubleClick` → `dblclick`, `onInputCapture` → `input` в фазе перехвата.
+ */
+export function parseEventProp(key: string): { event: string; capture: boolean } {
+  let raw = key.slice(2);
+  const capture = raw.endsWith('Capture');
+  if (capture) raw = raw.slice(0, -'Capture'.length);
+  raw = raw.toLowerCase();
   // В DOM событие называется `dblclick`, а не `doubleclick`: без этой
   // перекладки `onDoubleClick` молча не срабатывает никогда.
   // РУС: в DOM событие называется `dblclick` — без перекладки обработчик молчит.
-  return raw === 'doubleclick' ? 'dblclick' : raw;
+  return { event: raw === 'doubleclick' ? 'dblclick' : raw, capture };
 }
 
 /**

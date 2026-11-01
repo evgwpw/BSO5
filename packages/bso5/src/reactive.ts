@@ -323,6 +323,50 @@ export function untrack<T>(fn: () => T): T {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// computed(): derived value that only notifies when it actually changed
+// (РУС: computed() — производное значение, уведомляющее только при реальном изменении)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Derives a value from reactive sources: recomputes when a dependency changes
+ * and notifies readers only when the result differs (`Object.is`). Returns a
+ * `Signal`, so it can be used anywhere a signal is expected — `$()`, `<For>`,
+ * `each`, plain reads inside `effect()`.
+ *
+ * Recomputation is **eager** (on dependency change, not on read): there is no
+ * lazy cache, which keeps the dependency graph simple and ordering obvious.
+ * Inside a scope (`mount()`, `<For>`, `<Show>`) the underlying effect is owned
+ * by that scope and stops with it.
+ *
+ * ```ts
+ * const count = signal(2);
+ * const doubled = computed(() => count.value * 2);
+ * effect(() => console.log(doubled.value)); // 4, затем 6 — но не дважды
+ * count.value = 3;
+ * ```
+ *
+ * РУС: Выводит значение из реактивных источников: пересчитывается при
+ * изменении зависимости и уведомляет читателей только если результат реально
+ * изменился (`Object.is`). Возвращает `Signal`, поэтому подходит везде, где
+ * ждут сигнал — `$()`, `<For>`, `each`, обычное чтение в `effect()`.
+ *
+ * Пересчёт **энергичный** (на изменение зависимости, не на чтение): ленивого
+ * кеша нет, зато граф зависимостей простой и порядок очевиден. Внутри области
+ * (`mount()`, `<For>`, `<Show>`) эффект принадлежит ей и останавливается вместе с ней.
+ */
+export function computed<T>(fn: () => T): Signal<T> {
+  const out = signal<T>(undefined as unknown as T);
+  effect(() => {
+    // Writing an equal value is a no-op (Signal compares with Object.is),
+    // so downstream effects do not re-run on unrelated recomputations.
+    // РУС: Запись равного значения ничего не делает (Signal сравнивает через
+    // Object.is), поэтому нижестоящие эффекты не перезапускаются зря.
+    out.value = fn();
+  });
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // effect(): auto-tracked re-runnable computation over Signals
 // (РУС: effect() — автотрекаемый перезапускаемый вычислитель над Signal'ами)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -335,6 +379,24 @@ interface EffectRecord {
   active: boolean;
   /** True while the effect body is running — guards against sync recursion. (РУС: Истинно, пока тело эффекта выполняется — защита от синхронной рекурсии.) */
   running: boolean;
+  /** Per-effect error sink, overriding the global default. (РУС: Обработчик ошибок этого эффекта, перекрывающий глобальный.) */
+  onError?: (error: unknown) => void;
+}
+
+/** Global fallback for effect errors; `null` means "log to console". (РУС: Глобальный обработчик ошибок эффектов; `null` — писать в console.) */
+let effectErrorHandler: ((error: unknown) => void) | null = null;
+
+/**
+ * Replaces the default `console.error` sink for errors thrown inside
+ * `effect()`. Pass `null` to restore the default. Per-effect `onError`
+ * (second argument of `effect()`) wins over this handler.
+ *
+ * РУС: Заменяет `console.error` как приёмник ошибок из `effect()`. Передайте
+ * `null`, чтобы вернуть поведение по умолчанию. `onError` конкретного эффекта
+ * (второй аргумент `effect()`) важнее этого обработчика.
+ */
+export function setEffectErrorHandler(handler: ((error: unknown) => void) | null): void {
+  effectErrorHandler = handler;
 }
 
 /** Currently running effect, if any. (РУС: Выполняющийся в данный момент эффект, если есть.) */
@@ -402,9 +464,22 @@ function runEffect(rec: EffectRecord): void {
   } catch (err) {
     // Effects are background computations: a throw inside must not propagate
     // into the code that wrote the signal. Surface it, keep the app alive.
+    // The per-effect `onError` wins; then the global handler; then console.
     // РУС: Эффекты — фоновые вычисления: исключение внутри не должно попадать
     // в код, записавший сигнал. Показываем его, приложение продолжает жить.
-    console.error('bso5: unhandled error in effect()', err);
+    // Обработчик конкретного эффекта важнее глобального, глобальный — важнее console.
+    const handler = rec.onError ?? effectErrorHandler;
+    if (handler) {
+      try {
+        handler(err);
+      } catch (handlerErr) {
+        // A broken error handler must not take down the reactive graph.
+        // РУС: Сломанный обработчик ошибок не должен ронять реактивный граф.
+        console.error('bso5: error handler threw', handlerErr);
+      }
+    } else {
+      console.error('bso5: unhandled error in effect()', err);
+    }
   } finally {
     rec.running = false;
     runningEffect = prev;
@@ -423,6 +498,12 @@ function detachDeps(rec: EffectRecord): void {
   rec.reactiveDeps.clear();
 }
 
+/** Options of {@link effect}. (РУС: Опции {@link effect}.) */
+export interface EffectOptions {
+  /** Receives exceptions thrown by the effect body instead of `console.error`. (РУС: Принимает исключения тела эффекта вместо `console.error`.) */
+  onError?: (error: unknown) => void;
+}
+
 /**
  * Runs `fn` immediately and re-runs it whenever any `Signal` it read — or any
  * property it read through a `Reactive` proxy — changes.
@@ -432,13 +513,14 @@ function detachDeps(rec: EffectRecord): void {
  * прочитанного `Signal` — или любого свойства, прочитанного через прокси
  * `Reactive`. Возвращает функцию остановки, навсегда отсоединяющую эффект.
  */
-export function effect(fn: () => void): () => void {
+export function effect(fn: () => void, options?: EffectOptions): () => void {
   const rec: EffectRecord = {
     fn,
     deps: new Set(),
     reactiveDeps: new Map(),
     active: true,
     running: false,
+    onError: options?.onError,
   };
   const stop = (): void => {
     rec.active = false;

@@ -40,8 +40,10 @@ export {
   Signal,
   signal,
   effect,
+  computed,
   batch,
   untrack,
+  setEffectErrorHandler,
   Reactive,
   getPropertyName,
   isBoundValue,
@@ -55,7 +57,7 @@ export {
   getCurrentScope,
 } from './reactive.js';
 
-export type { WatchCallback, PathAccessor, BoundValue, Scope } from './reactive.js';
+export type { WatchCallback, PathAccessor, BoundValue, Scope, EffectOptions } from './reactive.js';
 
 export {
   h,
@@ -65,9 +67,11 @@ export {
   appendChildren,
   releaseBindings,
   mount,
+  parseEventProp,
+  applyAttr,
 } from './dom.js';
 
-export type { Content, Attrs, Mounted } from './dom.js';
+export type { Content, Attrs, Mounted, StyleObject, StyleValue } from './dom.js';
 
 export { For, Show, resolveSource } from './control.js';
 

@@ -295,60 +295,86 @@ export function Show(props: ShowProps): DocumentFragment {
   frag.append(start, end);
   const child = unwrapChild(props.children);
   const fallback = props.fallback ?? null;
-  let staticMain: Node[] | null = null;
-  let staticFallback: Node[] | null = null;
-  // Dynamic branches are rebuilt on every show, so the previous branch owns
-  // its effects and bindings and must be torn down explicitly.
-  // РУС: Динамические ветки строятся заново при каждом показе, поэтому
-  // предыдущая ветка владеет своими эффектами и её надо снимать явно.
+  // A thunk branch is rebuilt on every show and torn down on every hide, so a
+  // hidden tab stops reacting to model writes. A ready-made node cannot be
+  // resurrected once its bindings are released (they live in a WeakMap keyed
+  // by that very node), so node branches are cached and keep their
+  // subscriptions until the Show is disposed: pass a thunk when the branch
+  // must really be torn down.
+  // РУС: Ветка-танка строится заново при каждом показе и снимается при
+  // скрытии, поэтому скрытая вкладка перестаёт реагировать на записи. Готовый
+  // узел после снятия привязок «оживить» нельзя (они лежат в WeakMap по самому
+  // узлу), поэтому узловые ветки кешируются и держат подписки до сноса Show:
+  // если нужен настоящий снос — передавайте танку.
   let branchScope: Scope | null = null;
   let branchNodes: Node[] = [];
+  /** True when the mounted branch was built from a thunk (and can be rebuilt). (РУС: Истинно, когда смонтированная ветка построена из танки и её можно пересобрать.) */
+  let branchIsThunk = false;
+  /** Node branches are single-use: cached, never re-bound. (РУС: Узловые ветки одноразовые: кешируются, но не перепривязываются.) */
+  const cache: { main: Node[] | null; fallback: Node[] | null } = { main: null, fallback: null };
+  /** Last rendered decision; `null` before the first render. (РУС: Последнее отрендеренное решение; `null` до первого рендера.) */
+  let shown: boolean | null = null;
 
-  const releaseBranch = (): void => {
+  /** Tears down a thunk branch (a node branch is kept for reuse). (РУС: Снимает ветку-танку; узловая ветка остаётся для повторного показа.) */
+  const releaseThunkBranch = (): void => {
+    if (!branchIsThunk) return;
     if (branchScope) {
       dispose(branchScope);
       branchScope = null;
     }
     for (const n of branchNodes) releaseBindings(n);
     branchNodes = [];
+    branchIsThunk = false;
   };
 
   const stop = effect(() => {
     const show = !!resolveSource(props.when);
     const branch = show ? child : fallback;
+    const isFunction = typeof branch === 'function';
+    // A cached (node) branch only changes when the decision flips: re-running
+    // the effect for `when={() => count > 10}` must not rebuild the DOM on
+    // every `count` write. Thunks are re-evaluated on every run, because they
+    // may read reactive values themselves.
+    // РУС: Закешированная (узловая) ветка меняется только при смене решения:
+    // перезапуск эффекта у `when={() => count > 10}` не должен перестраивать
+    // DOM на каждую запись `count`. Танки перевычисляются на каждый прогон,
+    // так как сами могут читать реактивные значения.
+    if (!isFunction && shown === show) return;
+    shown = show;
+    releaseThunkBranch();
     if (branch === null || branch === undefined || branch === false) {
-      releaseBranch();
       clearBetween(start, end);
       return;
     }
-    if (typeof branch === 'function') {
-      releaseBranch();
+    if (isFunction) {
       const scope = createScope();
       const nodes = runInScope(scope, () => toNodes((branch as () => JsxChild)()));
       branchScope = scope;
       branchNodes = nodes;
+      branchIsThunk = true;
       clearBetween(start, end);
       insertAll(nodes, end);
       return;
     }
-    // Static JSX is rendered once and re-inserted on toggle: it keeps its
-    // effects for the whole lifetime of the Show.
-    // РУС: Статический JSX рендерится один раз и пере-вставляется при
-    // переключении: его эффекты живут всё время жизни Show.
-    releaseBranch();
-    let nodes = show ? staticMain : staticFallback;
+    const cacheKey = show ? 'main' : 'fallback';
+    let nodes = cache[cacheKey];
     if (!nodes) {
       nodes = toNodes(branch as JsxChild);
-      if (show) staticMain = nodes;
-      else staticFallback = nodes;
+      cache[cacheKey] = nodes;
     }
+    branchNodes = nodes;
     clearBetween(start, end);
     insertAll(nodes, end);
   });
 
   onScopeDispose(() => {
     stop();
-    releaseBranch();
+    releaseThunkBranch();
+    for (const nodes of [cache.main, cache.fallback]) {
+      for (const n of nodes ?? []) releaseBindings(n);
+    }
+    cache.main = null;
+    cache.fallback = null;
   });
   return frag;
 }
