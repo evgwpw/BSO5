@@ -49,6 +49,8 @@
 | --- | --- |
 | Примеры из README не расходятся с кодом | [`docs/snippets/`](./snippets) входит в `npm run typecheck` |
 | Сводный файл для LLM актуален | `npm run docs:check` (CI падает, если `llms-full.txt` устарел) |
+| Ссылки между документами живые | `scripts/check-doc-links.mjs` в том же `docs:check` |
+| HTML-страница не отстаёт | собирается из этих же `.md` командой `npm run docs:html` |
 | Обещания про производительность не выдуманы | числа из `npm run bench`, команда в README |
 | Ломающие изменения описаны | [`CHANGELOG.md`](../CHANGELOG.md) |
 
@@ -56,9 +58,13 @@
 
 ```bash
 npm run docs:llm     # пересобрать llms-full.txt
-npm run docs:check   # проверить, что он не устарел (это же делает CI)
+npm run docs:check   # проверить, что он не устарел, и что ссылки живые (это же делает CI)
 npm run typecheck    # проверить компилируемые сниппеты
+npm run docs:html    # собрать одностраничный HTML-справочник (.qwen/tmp/bso5-handbook.html)
 ```
+
+`docs:html` — только для чтения глазами: страница собирается из этих же `.md`
+и в репозиторий не попадает, поэтому не бывает «второй версии правды».
 
 ## Состав `docs/`
 
