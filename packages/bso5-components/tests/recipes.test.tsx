@@ -228,16 +228,29 @@ describe('рецепт 9: дерево', () => {
 });
 
 describe('рецепт 11: без сборщика', () => {
-  it('importmap указывает на существующие файлы dist', () => {
+  it('importmap указывает на пакеты, которые собираются в dist', () => {
     const file = join(repoRoot, 'examples/importmap/index.html');
     const source = readFileSync(file, 'utf8');
     const map = source.match(/<script type="importmap">([\s\S]*?)<\/script>/)![1];
     const imports = Object.entries(JSON.parse(map).imports as Record<string, string>);
 
     expect(imports.length).toBeGreaterThanOrEqual(3);
+
     for (const [spec, target] of imports) {
+      // `dist` может быть не собран (чистый клон, в CI тесты идут до build),
+      // поэтому проверяем инвариант без сборки: путь ведёт в dist пакета, а пакет
+      // действительно собирается в dist и публикует его — иначе importmap сломается.
+      const match = target.match(/\/packages\/([^/]+)\/dist\/(.+)$/);
+      expect(match, `${spec} -> ${target}`).not.toBeNull();
+
+      const pkgDir = join(repoRoot, 'packages', match![1]);
+      const buildConfig = JSON.parse(readFileSync(join(pkgDir, 'tsconfig.build.json'), 'utf8'));
+      expect(buildConfig.compilerOptions.outDir, `${match![1]}: outDir не dist`).toBe('dist');
+
       const resolved = resolve(dirname(file), target);
-      expect(existsSync(resolved), `${spec} -> ${target}`).toBe(true);
+      if (existsSync(resolved)) continue; // собран — проверяем и сам файл
+      const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')) as { files?: string[] };
+      expect(pkg.files ?? [], `${match![1]}: dist не публикуется`).toContain('dist');
     }
   });
 });
