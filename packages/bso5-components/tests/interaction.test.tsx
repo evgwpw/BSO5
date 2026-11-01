@@ -116,7 +116,129 @@ describe('Grid: состояние групп и сортировки', () => {
   });
 });
 
-describe('Tree: nodeKey, a11y, клавиатура', () => {
+describe('Grid: подписи и настройка поиска', () => {
+  it('labels перекрывают умолчания и старый searchPlaceholder', () => {
+    const el = Grid({
+      rows: ROWS,
+      columns: COLS,
+      searchPlaceholder: 'legacy',
+      labels: {
+        search: 'Поиск по задачам',
+        searchPlaceholder: 'искать…',
+        sortDirection: 'Направление',
+        descending: 'убыв',
+        ascending: 'возр',
+        rows: 'строк:',
+      },
+    });
+    document.body.appendChild(el);
+
+    const input = el.querySelector('input.search') as HTMLInputElement;
+    expect(input.getAttribute('aria-label')).toBe('Поиск по задачам');
+    expect(input.placeholder).toBe('искать…');
+
+    const select = el.querySelector('select.dir') as HTMLSelectElement;
+    expect(select.getAttribute('aria-label')).toBe('Направление');
+    expect([...select.options].map(o => o.textContent)).toEqual(['убыв', 'возр']);
+    expect(text(el.querySelector('.chip'))).toBe('строк: 4');
+  });
+
+  it('пустой префикс счётчика скрывает текст, оставляя число', () => {
+    const el = Grid({ rows: ROWS, columns: COLS, labels: { rows: '' } });
+    document.body.appendChild(el);
+    expect(text(el.querySelector('.chip'))).toBe('4');
+  });
+
+  it('searchDebounce: false отключает задержку даже на большом источнике', () => {
+    const big: Row[] = Array.from({ length: 250 }, (_, i) => ({ id: i, title: `row-${i}`, group: 'G' }));
+    const el = Grid({ rows: big, columns: COLS, searchDebounce: false });
+    document.body.appendChild(el);
+
+    const search = el.querySelector('input.search') as HTMLInputElement;
+    search.value = 'row-1';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(el.querySelectorAll('tbody tr').length).toBeLessThan(250); // сразу, без таймера
+  });
+
+  it('searchDebounceMinItems задаёт свой порог', () => {
+    vi.useFakeTimers();
+    const el = Grid({ rows: ROWS, columns: COLS, searchDebounce: 50, searchDebounceMinItems: 2 });
+    document.body.appendChild(el);
+
+    const search = el.querySelector('input.search') as HTMLInputElement;
+    search.value = 'alp';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(el.querySelectorAll('tbody tr').length).toBe(4); // порог 2 < 4 строк → ждём
+
+    vi.advanceTimersByTime(60);
+    expect(el.querySelectorAll('tbody tr').length).toBe(1);
+  });
+});
+
+describe('Tree: подписи, expand-all и клавиатура', () => {
+  it('labels задают подписи счётчика и кнопок', () => {
+    const el = Tree({
+      root: TREE,
+      showExpandAll: true,
+      labels: { matched: 'найдено:', expandAll: 'Развернуть', collapseAll: 'Свернуть' },
+    });
+    document.body.appendChild(el);
+    expect(text(el.querySelector('.chip'))).toContain('найдено:');
+    expect(text(el.querySelector('button.expand-all'))).toBe('Развернуть');
+    expect(text(el.querySelector('button.collapse-all'))).toBe('Свернуть');
+  });
+
+  it('expand-all раскрывает все папки, collapse-all сворачивает', () => {
+    const el = Tree({ root: TREE, showExpandAll: true });
+    document.body.appendChild(el);
+    expect(el.querySelectorAll('.node').length).toBe(1); // свёрнуто
+
+    (el.querySelector('button.expand-all') as HTMLElement).click();
+    expect(el.querySelectorAll('.node').length).toBe(3); // root, src, index.ts
+    expect(el.querySelectorAll('.kids').length).toBe(2);
+
+    (el.querySelector('button.collapse-all') as HTMLElement).click();
+    expect(el.querySelectorAll('.node').length).toBe(1);
+  });
+
+  it('без showExpandAll кнопок нет', () => {
+    const el = Tree({ root: TREE });
+    document.body.appendChild(el);
+    expect(el.querySelector('button.expand-all')).toBeNull();
+  });
+
+  it('только корневая строка в Tab-порядке, остальные — по стрелкам', () => {
+    const el = Tree({ root: TREE });
+    document.body.appendChild(el);
+    const rootRow = el.querySelector('.row') as HTMLElement;
+    expect(rootRow.getAttribute('tabindex')).toBe('0');
+
+    rootRow.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    const rows = () => [...el.querySelectorAll<HTMLElement>('.row')];
+    expect(rows().length).toBe(2);
+    expect(rows()[1].getAttribute('tabindex')).toBe('-1');
+    // после перерисовки фокус возвращается на тот же узел
+    expect(document.activeElement).toBe(rows()[0]);
+    expect(rows()[0].dataset.key).toBe('root');
+
+    rows()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(document.activeElement).toBe(rows()[1]);
+    expect(text(document.activeElement)).toContain('src');
+
+    (document.activeElement as HTMLElement)
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    expect(document.activeElement).toBe(rows()[0]);
+  });
+
+  it('клик по узлу тоже возвращает фокус после перерисовки', () => {
+    const el = Tree({ root: TREE });
+    document.body.appendChild(el);
+    (el.querySelector('.row') as HTMLElement).click();
+    expect(document.activeElement).toBe(el.querySelector('.row'));
+  });
+});
+
+describe('Tree: nodeKey и доступность', () => {
   it('nodeKey вызывается и определяет ключ раскрытия', () => {
     let calls = 0;
     const el = Tree({

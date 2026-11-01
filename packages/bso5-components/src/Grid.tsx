@@ -58,6 +58,22 @@ export interface Column<Row> {
   sortable?: boolean;
 }
 
+/** UI strings of {@link Grid}; every field has an English default. (РУС: Подписи интерфейса {@link Grid}; у каждого поля есть английское значение по умолчанию.) */
+export interface GridLabels {
+  /** Accessible name of the search box. (РУС: Доступное имя поля поиска.) */
+  search?: string;
+  /** Placeholder of the search box; defaults to `search`. (РУС: Плейсхолдер поиска; по умолчанию равен `search`.) */
+  searchPlaceholder?: string;
+  /** Accessible name of the sort-direction control. (РУС: Доступное имя контрола направления сортировки.) */
+  sortDirection?: string;
+  /** Text of the descending option. (РУС: Текст варианта «по убыванию».) */
+  descending?: string;
+  /** Text of the ascending option. (РУС: Текст варианта «по возрастанию».) */
+  ascending?: string;
+  /** Prefix of the row counter; empty string hides the counter text. (РУС: Префикс счётчика строк; пустая строка скрывает текст счётчика.) */
+  rows?: string;
+}
+
 /** Props of {@link Grid}. (РУС: Пропсы {@link Grid}.) */
 export interface GridProps<Row> {
   /** Data source: array, thunk, `Signal` or `$()`-bound value. (РУС: Источник данных: массив, танка, `Signal` или `$()`-значение.) */
@@ -90,8 +106,22 @@ export interface GridProps<Row> {
   rowKey?: (row: Row) => unknown;
   /** Search box placeholder. (РУС: Плейсхолдер строки поиска.) */
   searchPlaceholder?: string;
+  /**
+   * Search debounce in ms. Applies only to sources of at least
+   * `searchDebounceMinItems` rows (small tables must react instantly).
+   * `false` disables it. Default: 120.
+   *
+   * РУС: Задержка поиска в мс. Действует только на источники от
+   * `searchDebounceMinItems` строк (маленькие таблицы должны отвечать сразу).
+   * `false` отключает. По умолчанию 120.
+   */
+  searchDebounce?: number | false;
+  /** Row count from which the debounce kicks in. Default: 200. (РУС: Число строк, с которого включается задержка. По умолчанию 200.) */
+  searchDebounceMinItems?: number;
   /** Text shown when no rows match. Optional. (РУС: Текст при отсутствии строк. Необязательно.) */
   empty?: string;
+  /** UI labels (placeholders, aria labels, counter prefix). (РУС: Подписи интерфейса (плейсхолдеры, aria-метки, префикс счётчика).) */
+  labels?: Partial<GridLabels>;
   /** Extra class for the root element. (РУС: Дополнительный класс корневого элемента.) */
   class?: string;
 }
@@ -116,8 +146,24 @@ type GridRow<Row> =
 export function Grid<Row>(props: GridProps<Row>): HTMLElement {
   const {
     rows, columns, filter, groupBy, initialSort, rowKey, searchPlaceholder,
+    searchDebounce, searchDebounceMinItems, labels,
     empty = 'No rows match the current filter.', class: rootClass = 'grid',
   } = props;
+
+  /* UI strings: explicit `labels` win, then the legacy single-purpose props,
+   * then English defaults. Kept as plain strings, not signals: they are
+   * static per instance and baked into once-built markup.
+   * РУС: Подписи: явные `labels` важнее старых одиночных пропсов, затем
+   * английские значения по умолчанию. Это обычные строки, не сигналы:
+   * они статичны для инстанса и вшиваются в однократно построенную разметку. */
+  const ui = {
+    search: labels?.search ?? searchPlaceholder ?? 'Search',
+    placeholder: labels?.searchPlaceholder ?? searchPlaceholder ?? 'Search…',
+    sortDirection: labels?.sortDirection ?? 'Sort direction',
+    descending: labels?.descending ?? '↓ desc',
+    ascending: labels?.ascending ?? '↑ asc',
+    rows: labels?.rows ?? 'rows:',
+  };
 
   /* Instance state: fresh signals per component call — two Grids are
    * independent; note that static markup (headers, toolbar) is built once
@@ -190,15 +236,15 @@ export function Grid<Row>(props: GridProps<Row>): HTMLElement {
 
   /* Большие источники получают дебаунс: перерисовка таблицы на каждый символ
    * заметна уже на 300–400 строках, а на малых данных задержка только мешает
-   * (и ломала бы «мгновенный» отклик в тестах). */
+   * (и ломала бы «мгновенный» отклик в тестах). Порог и задержка — пропсы. */
   let queryTimer: ReturnType<typeof setTimeout> | null = null;
-  const QUERY_DEBOUNCE_MIN = 200;
-  const QUERY_DEBOUNCE_MS = 120;
+  const debounceMs = searchDebounce === false ? 0 : (searchDebounce ?? 120);
+  const debounceMinItems = searchDebounceMinItems ?? 200;
   function onSearchInput(value: string): void {
     const total = (resolveSource(rows) ?? []).length;
     if (queryTimer) { clearTimeout(queryTimer); queryTimer = null; }
-    if (total < QUERY_DEBOUNCE_MIN) { query.value = value; return; }
-    queryTimer = setTimeout(() => { queryTimer = null; query.value = value; }, QUERY_DEBOUNCE_MS);
+    if (debounceMs <= 0 || total < debounceMinItems) { query.value = value; return; }
+    queryTimer = setTimeout(() => { queryTimer = null; query.value = value; }, debounceMs);
   }
 
   // The JSX expression is typed as Node; the root is always a div, so the
@@ -211,8 +257,8 @@ export function Grid<Row>(props: GridProps<Row>): HTMLElement {
         <input
           type="text"
           class="search"
-          aria-label={searchPlaceholder ?? 'Search'}
-          placeholder={searchPlaceholder ?? 'Search…'}
+          aria-label={ui.search}
+          placeholder={ui.placeholder}
           onInput={e => { onSearchInput((e.target as HTMLInputElement).value); }}
         />
         {/* Направление сортировки реактивно и в обе стороны: клик по заголовку
@@ -220,14 +266,14 @@ export function Grid<Row>(props: GridProps<Row>): HTMLElement {
         {/* РУС: направление сортировки реактивно в обе стороны. */}
         <select
           class="dir"
-          aria-label="Sort direction"
+          aria-label={ui.sortDirection}
           value={$(sortDir)}
           onChange={e => { sortDir.value = (e.target as HTMLSelectElement).value as 'asc' | 'desc'; }}
         >
-          <option value="desc">↓ desc</option>
-          <option value="asc">↑ asc</option>
+          <option value="desc">{ui.descending}</option>
+          <option value="asc">{ui.ascending}</option>
         </select>
-        <span class="chip">rows: <b>{$(itemCount)}</b></span>
+        <span class="chip">{ui.rows ? `${ui.rows} ` : ''}<b>{$(itemCount)}</b></span>
       </div>
       <table>
         <thead>
