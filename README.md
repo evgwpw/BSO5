@@ -49,8 +49,8 @@ npm run example:dataview   # vite-дев-сервер examples/dataview
 ## Документация
 
 - [docs/README.md](./docs/README.md) — навигация: что читать под какую задачу
-- [docs/API.md](./docs/API.md) — полный справочник API (сигнатуры, семантика, ограничения)
-- [docs/GUIDE.md](./docs/GUIDE.md) — рецепты по задачам и таблица грабель
+- [docs/API.md](./docs/API.md) — полный справочник API (сигнатуры, семантика, ограничения) · [english](./docs/API.en.md)
+- [docs/GUIDE.md](./docs/GUIDE.md) — рецепты по задачам и таблица грабель · [english](./docs/GUIDE.en.md)
 - [docs/TREE_GRID.md](./docs/TREE_GRID.md) — разметка, карта классов и минимальный CSS для `Grid`/`Tree`
 - [packages/bso5/README.md](./packages/bso5/README.md) — вводный README ядра: концепции, справочник `h()`, жизненный цикл ([english](./packages/bso5/README.en.md))
 - [packages/bso5-components/README.md](./packages/bso5-components/README.md) — вводный README компонентов ([english](./packages/bso5-components/README.en.md))
@@ -59,7 +59,8 @@ npm run example:dataview   # vite-дев-сервер examples/dataview
 - [WHERE_DS_WAS_BETTER.md](./WHERE_DS_WAS_BETTER.md) — исходная задача на доработку
 
 Для LLM и агентов: [`llms.txt`](./llms.txt) — карта документации, [`llms-full.txt`](./llms-full.txt) —
-вся документация одним файлом (`npm run docs:llm` пересобирает, `npm run docs:check` сверяет в CI).
+вся документация одним файлом, [`llms-full.en.txt`](./llms-full.en.txt) — то же по-английски
+(`npm run docs:llm` пересобирает, `npm run docs:check` сверяет в CI).
 
 ## Лицензия
 

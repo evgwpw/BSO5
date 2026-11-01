@@ -27,12 +27,13 @@ const DOCS = [
 
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/** Тот же алгоритм, что у GitHub и в check-doc-links: пунктуация выброшена, каждый пробел → дефис. */
 const slug = s => s
   .toLowerCase()
-  .replace(/[`*_[\]()]/g, '')
+  .replace(/`|\*\*|\*|__/g, '')
   .replace(/[^\p{L}\p{N}\s-]/gu, '')
   .trim()
-  .replace(/\s+/g, '-');
+  .replace(/\s/g, '-');
 
 /** Инлайн-разметка: сначала вырезаем `code`, потом остальное. */
 function inline(text) {
