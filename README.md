@@ -64,7 +64,6 @@ npm run example:dataview   # vite-дев-сервер examples/dataview
 - [packages/bso5-components/README.md](./packages/bso5-components/README.md) — вводный README компонентов ([english](./packages/bso5-components/README.en.md))
 - [docs/COMPROMISES.md](./docs/COMPROMISES.md) — осознанные компромиссы реализаций
 - [CHANGELOG.md](./CHANGELOG.md) — изменения по версиям
-- [WHERE_DS_WAS_BETTER.md](./WHERE_DS_WAS_BETTER.md) — исходная задача на доработку
 
 Для LLM и агентов: [`llms.txt`](./llms.txt) — карта документации, [`llms-full.txt`](./llms-full.txt) —
 вся документация одним файлом, [`llms-full.en.txt`](./llms-full.en.txt) — то же по-английски
